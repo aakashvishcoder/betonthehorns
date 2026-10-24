@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Prototype</title>
+<style>
+  :root {
+    --bg: #09070b; --surface: #120e15; --raised: #1a1320; --border: #3b0949; --text: #fbf5fe; --muted: #a79aae;
+    --violet: #ba50e5; --violet-light: #e1b0f7; --violet-dark: #8625a6; --maroon: #c73757; --felt: #1f0f27;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--violet-dark); background: var(--violet-dark); border-radius: 7px; padding: 8px 14px; }
+  button:hover:not(:disabled) { background: #932db9; }
+  button.ghost { background: transparent; border-color: var(--border); color: var(--violet-light); }
+  button:disabled { opacity: .45; cursor: default; }
+  input { background: #0d0b10; border: 1px solid #5e206f; border-radius: 6px; padding: 7px 9px; min-width: 0; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 17px; }
+  header small { color: var(--muted); }
+  .pill { display: inline-block; padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; color: var(--violet-light); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; min-width: 0; }
+  .panel h2 { margin: 0 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .modes button.on { background: var(--violet); border-color: var(--violet); }
+  #status { color: var(--violet-light); margin-top: 10px; min-height: 1.4em; }
+  /* Table */
+  .stage { position: relative; aspect-ratio: 16 / 9; max-height: 62vh; width: 100%; margin-top: 12px; }
+  .felt { position: absolute; inset: 11% 9%; border-radius: 50%; border: 2px solid #6f2088;
+          background: radial-gradient(ellipse at 50% 45%, #2a1233, var(--felt) 60%, #0a070c);
+          box-shadow: 0 0 0 10px #0d0910, 0 0 0 12px var(--border), inset 0 0 50px #3b094988; }
+  .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -55%); display: grid; justify-items: center; gap: 8px; }
+  .pot { background: #0b080dcc; border: 1px solid #5e206f; border-radius: 999px; padding: 3px 12px; font-size: 13px; }
+  .board { display: flex; gap: 5px; min-height: 58px; }
+  .seat { position: absolute; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 2px; min-width: 120px; }
+  .seat .box { position: relative; background: #120e15f2; border: 1px solid var(--border); border-radius: 12px; padding: 5px 12px; text-align: center; min-width: 120px; }
+  .seat.me .box { border-color: var(--violet); background: #2a0f35; }
+  .seat.acting .box { box-shadow: 0 0 0 2px var(--violet), 0 0 18px #ba50e588; }
+  .seat.folded, .seat.out { opacity: .4; }
+  .seat .name { font-weight: 700; font-size: 12px; }
+  .seat .stack { color: var(--violet-light); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .seat .tag { position: absolute; top: -9px; right: -8px; background: var(--violet-dark); border-radius: 999px; padding: 0 7px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .seat .bet { font-size: 12px; color: var(--text); background: #0b080dcc; border-radius: 999px; padding: 1px 8px; }
+  .dealer { position: absolute; top: -8px; left: -8px; width: 20px; height: 20px; border-radius: 50%; background: var(--text); color: var(--border); font: 700 11px Georgia, serif; display: grid; place-items: center; }
+  .timer { height: 3px; width: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--violet), var(--maroon)); transform-origin: left; }
+  .timer.bank { background: var(--maroon); }
+  .cards { display: flex; gap: 3px; }
+  .card { width: 38px; height: 54px; border-radius: 5px; background: #fbf5fe; color: #3b0949; display: grid; place-items: center; font: 700 15px Georgia, serif; border: 1px solid #d081f169; }
+  .card.red { color: var(--maroon); }
+  .card.back { background: repeating-linear-gradient(45deg, #2a0f35 0 6px, #3b0949 6px 12px); border-color: var(--violet-dark); }
+  .card.big { width: 54px; height: 78px; font-size: 20px; }
+  /* Actions */
+  .actions { margin-top: 12px; display: grid; gap: 8px; }
+  .actions .main button { flex: 1; min-height: 44px; font-weight: 600; }
+  .raise { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: center; }
+  .raise input[type=range] { accent-color: var(--violet); width: 100%; }
+  .presets button { padding: 4px 8px; font-size: 12px; }
+  #hint { color: var(--muted); font-size: 13px; min-height: 1.4em; }
+  /* Side */
+  aside { display: grid; gap: 16px; align-content: start; }
+  #log, #chat { height: 220px; overflow-y: auto; font-size: 12px; color: #d5c8da; display: grid; align-content: start; gap: 2px; }
+  #log div:has(> b) { margin-top: 6px; }
+  #chat b { color: var(--violet-light); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td, th { padding: 4px 2px; text-align: left; border-bottom: 1px solid #3b094955; }
+  th { color: var(--muted); font-weight: 500; }
+  .up { color: #8fdc9a; } .down { color: #f1b0b8; }
+  dialog { background: var(--surface); color: var(--text); border: 1px solid var(--violet); border-radius: 12px; padding: 18px; max-width: 420px; width: calc(100% - 32px); }
+  dialog::backdrop { background: #000a; }
+  .hidden { display: none !important; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } .stage { aspect-ratio: 4 / 5; } .seat, .seat .box { min-width: 0; } .card { width: 28px; height: 40px; font-size: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Bet on the Horns · game prototype</h1>
+    <small>Real game server, no Solana: wallets are throwaway keys made in this tab.</small>
+  </div>
+  <div class="row"><span class="pill" id="me">connecting…</span><span class="pill" id="myElo"></span></div>
+</header>
+
+<main>
+  <section class="panel">
+    <div id="lobby">
+      <h2>Ranked queue</h2>
+      <div class="row modes" id="modes"></div>
+      <div class="row" style="margin-top:10px">
+        <button id="queueBtn">Queue</button>
+        <button id="leaveBtn" class="ghost">Leave queue</button>
+        <button id="botsBtn" class="ghost">Fill table with bots</button>
+      </div>
+      <div id="status"></div>
+      <div id="watchList" style="margin-top:12px"></div>
+    </div>
+
+    <div id="tableArea" class="hidden">
+      <div class="row" style="justify-content:space-between">
+        <span class="row"><button id="lobbyBtn" class="ghost hidden">Lobby</button><span id="tableInfo" class="pill"></span></span>
+        <span id="hand" class="pill"></span>
+      </div>
+      <div class="stage" id="stage"><div class="felt"></div><div class="center"><div class="pot" id="pot"></div><div class="board" id="board"></div></div></div>
+      <div class="actions" id="actions">
+        <div id="hint"></div>
+        <div class="row main" id="mainActions">
+          <button class="ghost" data-act="fold">Fold</button>
+          <button class="ghost" data-act="call" id="callBtn">Call</button>
+          <button data-act="raise" id="raiseBtn">Raise</button>
+        </div>
+        <div class="row presets" id="presets"></div>
+        <div class="raise"><input type="range" id="raiseRange"><input type="number" id="raiseInput" aria-label="Raise to"></div>
+        <div class="row"><button id="showBtn" class="ghost hidden">Show my cards</button></div>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="panel"><h2>Hand log</h2><div id="log"></div></div>
+    <div class="panel">
+      <h2>Table chat</h2>
+      <div id="chat"></div>
+      <form id="chatForm" class="row" style="margin-top:8px"><input id="chatInput" maxlength="200" placeholder="Say something" style="flex:1"><button>Send</button></form>
+    </div>
+    <div class="panel"><h2>Ratings</h2><div id="ratings"></div></div>
+  </aside>
+</main>
+
+<dialog id="results"><h2 style="margin-top:0">Game over</h2><div id="resultsBody"></div><p><small id="seedLine"></small></p><button id="closeResults">Back to lobby</button></dialog>
+
+<script type="module">
+const MODES = { heads_up: ["1v1", 2], four: ["4 table", 4], six: ["6 table", 6] };
+const $ = id => document.getElementById(id);
+const short = a => a ? `${a.slice(0, 4)}…${a.slice(-4)}` : "";
+
+// --- Fake wallet: an ed25519 key made in this tab, kept for the tab's lifetime (survives reloads). ---
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function base58(bytes) {
+  let n = BigInt("0x" + ([...bytes].map(b => b.toString(16).padStart(2, "0")).join("") || "0")), out = "";
+  while (n > 0n) { out = B58[Number(n % 58n)] + out; n /= 58n; }
+  for (const b of bytes) { if (b) break; out = "1" + out; }
+  return out;
+}
+async function loadWallet() {
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem("proto-wallet")); } catch {}
+  let privateKey, publicRaw;
+  if (saved) {
+    privateKey = await crypto.subtle.importKey("jwk", saved.jwk, { name: "Ed25519" }, true, ["sign"]);
+    publicRaw = Uint8Array.from(saved.pub);
+  } else {
+    const kp = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+    privateKey = kp.privateKey;
+    publicRaw = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
+    try { sessionStorage.setItem("proto-wallet", JSON.stringify({ jwk: await crypto.subtle.exportKey("jwk", privateKey), pub: [...publicRaw] })); } catch {}
+  }
+  return {
+    address: base58(publicRaw),
+    // Exactly what Phantom's signMessage would produce for the login text.
+    async sign(text) {
+      const sig = new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, new TextEncoder().encode(text)));
+      return btoa(String.fromCharCode(...sig));
+    },
+  };
+}
+
+const wallet = await loadWallet();
+const state = { mode: "heads_up", queued: null, tableId: null, view: null, clock: null, clockAt: 0, ratingsAtSeat: null, lastLogLen: 0, records: [] };
+$("me").textContent = `You: ${short(wallet.address)}`;
+const name = id => id === wallet.address ? "You" : short(id);
+
+// --- Socket ---
+const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
+const send = msg => socket.send(JSON.stringify(msg));
+socket.onclose = () => setStatus("Disconnected from the prototype server. Reload to reconnect.");
+socket.onmessage = async e => {
+  const m = JSON.parse(e.data);
+  switch (m.type) {
+    case "challenge": return send({ type: "login", wallet: wallet.address, signature: await wallet.sign(`Bet on the Horns login: ${m.nonce}`) });
+    case "welcome": return setStatus("Signed in with your wallet signature. Pick a mode and queue.");
+    case "queued": state.queued = m.mode; return setStatus(`Queued for ${MODES[m.mode][0]} at ${m.rating} Elo. Waiting for players within range…`);
+    case "left_queue": state.queued = null; return setStatus("Left the queue.");
+    case "seated":
+      state.queued = null; state.tableId = m.tableId; state.lastLogLen = 0; $("log").replaceChildren(); $("chat").replaceChildren();
+      state.ratingsAtSeat = await fetchState().then(s => s.ratings);
+      return;
+    case "table": state.tableId = m.tableId; state.view = m.view; state.clock = m.clock; state.clockAt = performance.now(); state.tableMode = m.mode; renderLog(m.log); return render();
+    case "chat": return addLine($("chat"), `<b>${name(m.from)}</b> ${escape(m.text)}`);
+    case "finished": return showResults(m);
+    case "error": return setStatus(m.message);
+  }
+};
+const escape = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const setStatus = text => ($("status").textContent = text);
+function addLine(box, html) { const d = document.createElement("div"); d.innerHTML = html; box.append(d); box.scrollTop = box.scrollHeight; }
+
+// --- Lobby ---
+for (const [mode, [label]] of Object.entries(MODES)) {
+  const b = document.createElement("button");
+  b.textContent = label; b.className = "ghost"; b.dataset.mode = mode;
+  b.onclick = () => { state.mode = mode; renderModes(); };
+  $("modes").append(b);
+}
+function renderModes() { for (const b of $("modes").children) b.classList.toggle("on", b.dataset.mode === state.mode); }
+renderModes();
+$("queueBtn").onclick = () => send({ type: "queue", mode: state.mode });
+$("leaveBtn").onclick = () => send({ type: "leave_queue" });
+$("botsBtn").onclick = async () => {
+  if (state.queued !== state.mode) send({ type: "queue", mode: state.mode });
+  const s = await fetchState();
+  const waiting = s.queues[state.mode] + (state.queued === state.mode ? 0 : 1);
+  const count = Math.max(1, MODES[state.mode][1] - waiting);
+  await fetch("/api/bots", { method: "POST", body: JSON.stringify({ mode: state.mode, count }) });
+  setStatus(`Added ${count} bot${count > 1 ? "s" : ""} to the ${MODES[state.mode][0]} queue.`);
+};
+
+// --- Table ---
+function card(c, big = false) {
+  const el = document.createElement("div");
+  el.className = "card" + (big ? " big" : "");
+  if (!c) { el.classList.add("back"); return el; }
+  const suit = { s: "♠", h: "♥", d: "♦", c: "♣" }[c[1]];
+  el.textContent = (c[0] === "T" ? "10" : c[0]) + suit;
+  if (c[1] === "h" || c[1] === "d") el.classList.add("red");
+  return el;
+}
+
+function render() {
+  const v = state.view;
+  if (!v) return;
+  $("lobby").classList.add("hidden");
+  $("tableArea").classList.remove("hidden");
+  const seated = v.seats.some(s => s.id === wallet.address);
+  $("tableInfo").textContent = `${MODES[state.tableMode][0]} · ${seated ? "playing" : "watching"} · table ${state.tableId.slice(0, 8)}`;
+  $("lobbyBtn").classList.toggle("hidden", seated);
+  $("hand").textContent = `Hand #${v.handNo} · blinds ${v.blinds[0]}/${v.blinds[1]}`;
+  $("pot").innerHTML = `Pot <b>${v.pot}</b>`;
+  $("board").replaceChildren(...v.board.map(c => card(c)));
+
+  // Seats on an ellipse, you at the bottom.
+  const stage = $("stage");
+  stage.querySelectorAll(".seat").forEach(el => el.remove());
+  const n = v.seats.length;
+  const myIndex = Math.max(0, v.seats.findIndex(s => s.id === wallet.address));
+  v.seats.forEach((s, i) => {
+    const angle = (Math.PI / 2) + ((i - myIndex + n) % n) * (2 * Math.PI / n);
+    const el = document.createElement("div");
+    el.className = "seat";
+    el.style.left = `${50 + 42 * Math.cos(angle)}%`;
+    el.style.top = `${50 + 40 * Math.sin(angle)}%`;
+    if (s.id === wallet.address) el.classList.add("me");
+    if (s.id === v.toAct) el.classList.add("acting");
+    if (s.folded && !s.out) el.classList.add("folded");
+    if (s.out) el.classList.add("out");
+    const cards = document.createElement("div");
+    cards.className = "cards";
+    if (!s.out && !s.folded) cards.append(...s.cards.map(c => card(c, s.id === wallet.address)));
+    const box = document.createElement("div");
+    box.className = "box";
+    const tag = s.out ? `#${v.places[s.id] ?? "—"}` : s.allIn ? "all in" : s.folded ? "fold" : "";
+    box.innerHTML = `${v.button === i ? '<span class="dealer">D</span>' : ""}<div class="name">${name(s.id)}</div><div class="stack">${s.stack}</div>${tag ? `<span class="tag">${tag}</span>` : ""}`;
+    el.append(cards, box);
+    if (s.bet) { const b = document.createElement("div"); b.className = "bet"; b.textContent = `bet ${s.bet}`; el.append(b); }
+    if (s.id === v.toAct && state.clock) { const t = document.createElement("div"); t.className = "timer"; t.id = "timer"; el.append(t); }
+    stage.append(el);
+  });
+  renderActions();
+  tickClock();
+}
+
+function renderActions() {
+  const v = state.view, legal = v.legal;
+  const seated = v.seats.some(s => s.id === wallet.address);
+  $("actions").classList.toggle("hidden", !seated);
+  $("showBtn").classList.toggle("hidden", !v.canShow);
+  const myTurn = !!legal;
+  for (const b of $("mainActions").children) b.disabled = !myTurn;
+  $("raiseRange").disabled = $("raiseInput").disabled = !myTurn || !legal.canRaise;
+  $("raiseBtn").disabled = !myTurn || !legal.canRaise;
+  $("presets").replaceChildren();
+  if (!myTurn) {
+    const over = Object.keys(v.places).length === v.seats.length;
+    $("hint").textContent = over ? "Game over" : v.street === "done" ? "Next hand starting…" : v.toAct ? `Waiting for ${name(v.toAct)}…` : "";
+    return;
+  }
+  $("hint").textContent = legal.toCall ? `${legal.toCall} to call` : "You can check";
+  $("callBtn").textContent = legal.canCheck ? "Check" : `Call ${legal.toCall}`;
+  $("callBtn").dataset.act = legal.canCheck ? "check" : "call";
+  if (legal.canRaise) {
+    for (const el of [$("raiseRange"), $("raiseInput")]) { el.min = legal.minRaiseTo; el.max = legal.maxRaiseTo; }
+    if (!(+$("raiseInput").value >= legal.minRaiseTo && +$("raiseInput").value <= legal.maxRaiseTo)) $("raiseInput").value = $("raiseRange").value = legal.minRaiseTo;
+    $("raiseBtn").textContent = `Raise to ${$("raiseInput").value}`;
+    const pot = v.pot;
+    for (const [label, to] of [["Min", legal.minRaiseTo], ["½ pot", Math.round(pot / 2) + v.currentBet], ["Pot", pot + v.currentBet], ["All in", legal.maxRaiseTo]]) {
+      const b = document.createElement("button");
+      b.className = "ghost"; b.textContent = label;
+      b.onclick = () => setRaise(Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, to)));
+      $("presets").append(b);
+    }
+  }
+}
+function setRaise(to) { $("raiseInput").value = $("raiseRange").value = to; $("raiseBtn").textContent = `Raise to ${to}`; }
+$("raiseRange").oninput = e => setRaise(+e.target.value);
+$("raiseInput").oninput = e => ($("raiseBtn").textContent = `Raise to ${e.target.value}`);
+$("mainActions").onclick = e => {
+  const act = e.target.dataset?.act;
+  if (!act || e.target.disabled) return;
+  send({ type: "action", action: act === "raise" ? { type: "raise", to: +$("raiseInput").value } : { type: act } });
+};
+$("showBtn").onclick = () => send({ type: "show" });
+$("chatForm").onsubmit = e => { e.preventDefault(); const text = $("chatInput").value.trim(); if (text) send({ type: "chat", text }); $("chatInput").value = ""; };
+
+function renderLog(lines) {
+  const box = $("log");
+  box.replaceChildren();
+  for (const line of lines ?? []) {
+    const text = escape(line)
+      .replaceAll(short(wallet.address), "You")
+      .replace(/\bYou (folds|checks|calls|raises|shows|wins|finishes)\b/, (_, verb) => `You ${verb === "finishes" ? "finish" : verb.slice(0, -1)}`);
+    addLine(box, line.startsWith("—") ? `<b>${text}</b>` : text);
+  }
+}
+
+// Turn timer: base 20 s bar, then the time bank in maroon.
+function tickClock() {
+  const t = $("timer"), c = state.clock;
+  if (t && c) {
+    const elapsed = performance.now() - state.clockAt;
+    const turnLeft = c.turnMsLeft - elapsed;
+    const bankLeft = c.bankMsLeft - Math.max(0, elapsed - c.turnMsLeft);
+    t.classList.toggle("bank", turnLeft <= 0);
+    t.style.transform = `scaleX(${turnLeft > 0 ? turnLeft / 20000 : Math.max(0, bankLeft) / 60000})`;
+    if (c.player === wallet.address && state.view?.legal) {
+      $("hint").textContent = `${state.view.legal.toCall ? `${state.view.legal.toCall} to call` : "You can check"} · ${turnLeft > 0 ? Math.ceil(turnLeft / 1000) + "s" : `time bank ${Math.ceil(Math.max(0, bankLeft) / 1000)}s`}`;
+    }
+  }
+}
+setInterval(tickClock, 250);
+
+// --- Results and ratings ---
+async function fetchState() { return (await fetch("/api/state")).json(); }
+async function showResults(m) {
+  const after = (await fetchState()).ratings;
+  const mode = state.tableMode;
+  const rows = Object.entries(m.places).sort((a, b) => a[1] - b[1]).map(([id, place]) => {
+    const before = state.ratingsAtSeat?.find(r => r.wallet === id && r.mode === mode)?.rating;
+    const now = after.find(r => r.wallet === id && r.mode === mode)?.rating;
+    const diff = before !== undefined && now !== undefined ? now - before : null;
+    return `<tr><td>#${place}</td><td>${name(id)}</td><td>${before ?? "?"} → ${now ?? "?"}</td><td class="${diff > 0 ? "up" : diff < 0 ? "down" : ""}">${diff === null ? "" : (diff > 0 ? "+" : "") + diff}</td></tr>`;
+  }).join("");
+  $("resultsBody").innerHTML = `<table><tr><th>Place</th><th>Player</th><th>Elo</th><th></th></tr>${rows}</table>`;
+  $("seedLine").textContent = `Settled locally: ${m.settled ? "yes" : "no"}. Revealed shuffle seed ${m.seed.slice(0, 16)}… matched its commitment.`;
+  $("results").showModal();
+}
+function backToLobby() {
+  state.tableId = null; state.view = null;
+  $("tableArea").classList.add("hidden");
+  $("lobby").classList.remove("hidden");
+  $("log").replaceChildren(); $("chat").replaceChildren();
+}
+$("closeResults").onclick = () => { $("results").close(); backToLobby(); };
+$("lobbyBtn").onclick = () => { send({ type: "watch", tableId: "" }); backToLobby(); };
+
+async function refreshSide() {
+  const s = await fetchState();
+  const mine = s.ratings.filter(r => r.wallet === wallet.address);
+  $("myElo").textContent = mine.length ? mine.map(r => `${MODES[r.mode][0]} ${r.rating}`).join(" · ") : "Elo 1200 (unrated)";
+  const top = [...s.ratings].sort((a, b) => b.rating - a.rating).slice(0, 10);
+  $("ratings").innerHTML = top.length
+    ? `<table><tr><th>Player</th><th>Mode</th><th>Elo</th><th>W/G</th></tr>${top.map(r => `<tr><td>${name(r.wallet)}</td><td>${MODES[r.mode][0]}</td><td>${r.rating}</td><td>${r.wins}/${r.games}</td></tr>`).join("")}</table>`
+    : "<small>No games yet.</small>";
+  const queueLine = Object.entries(s.queues).map(([m, n]) => `${MODES[m][0]}: ${n} waiting`).join(" · ");
+  const tables = s.tables.filter(t => t.id !== state.tableId);
+  const watchHtml = `<small style="color:var(--muted)">${queueLine}</small>` +
+    (tables.length ? `<div class="row" style="margin-top:8px">${tables.map(t => `<button class="ghost" data-watch="${t.id}">Watch ${MODES[t.mode][0]} · ${t.players.length} players</button>`).join("")}</div>` : "");
+  // Only redraw when something changed, so a click in progress isn't lost.
+  if ($("watchList").innerHTML !== watchHtml) $("watchList").innerHTML = watchHtml;
+}
+$("watchList").onclick = e => { const id = e.target.dataset?.watch; if (id) send({ type: "watch", tableId: id }); };
+refreshSide();
+setInterval(refreshSide, 2000);
+</script>
+</body>
+</html>

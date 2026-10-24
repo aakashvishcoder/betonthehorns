@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { newNonce, verifyLogin } from "./auth.ts";
 import type { Chain } from "./chain.ts";
@@ -23,10 +24,11 @@ const CHAT_MAX = 200;
 const CHAT_GAP_MS = 1_000;
 const TICK_MS = 1_000;
 
-export type GameServerOptions = { port: number; chain: Chain; log?: (msg: string) => void };
+/** Listen on `port`, or attach to an existing HTTP `server` (the prototype serves its page there). */
+export type GameServerOptions = { port?: number; server?: Server; chain: Chain; log?: (msg: string) => void };
 
-export function startGameServer({ port, chain, log = () => {} }: GameServerOptions) {
-  const wss = new WebSocketServer({ port });
+export function startGameServer({ port, server, chain, log = () => {} }: GameServerOptions) {
+  const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
   const clients = new Set<Client>();
   const matchmaker = new Matchmaker();
   const tables = new Map<string, TableRunner>();
@@ -40,7 +42,7 @@ export function startGameServer({ port, chain, log = () => {} }: GameServerOptio
     const clock = table.clock();
     for (const c of audience(table.id)) {
       const seated = c.wallet !== undefined && tableOf.get(c.wallet) === table.id;
-      send(c, { type: "table", tableId: table.id, mode: table.mode, view: table.game.view(seated ? c.wallet : undefined), clock });
+      send(c, { type: "table", tableId: table.id, mode: table.mode, view: table.game.view(seated ? c.wallet : undefined), clock, log: table.log.slice(-40) });
     }
   }
 
@@ -117,6 +119,7 @@ export function startGameServer({ port, chain, log = () => {} }: GameServerOptio
       }
       case "watch": {
         const id = String(msg.tableId ?? "");
+        if (!id) return void (c.watching = undefined); // stop watching
         if (!tables.has(id)) return fail("No such table.");
         c.watching = id;
         return pushTable(tables.get(id)!);

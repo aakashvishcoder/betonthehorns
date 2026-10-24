@@ -9,6 +9,9 @@ export const TIMING = {
   showWindowMs: 5_000,
 };
 
+/** Short wallet label for the table log, e.g. "8Kx3…2Fa9". */
+export const shortName = (id: string) => `${id.slice(0, 4)}…${id.slice(-4)}`;
+
 export type TableEvents = {
   /** Something changed; push fresh views to players and spectators. */
   update(): void;
@@ -28,6 +31,8 @@ export class TableRunner {
   readonly timeBank: Map<string, number>;
   /** When the current turn's base timer started. */
   turnStartedAt = 0;
+  /** PokerNow-style running log of the game. */
+  readonly log: string[] = [];
   private readonly events: TableEvents;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private closed = false;
@@ -43,21 +48,52 @@ export class TableRunner {
   }
 
   start() {
-    this.game.startHand(Date.now());
-    this.afterChange();
+    this.startHand();
   }
 
-  act(player: string, action: Action) {
+  act(player: string, action: Action, note = "") {
     if (this.game.view().toAct !== player) throw new Error("not your turn");
     const overrun = Date.now() - this.turnStartedAt - TIMING.turnMs;
+    const { toCall } = this.game.legal(player);
+    const handBefore = this.game.handNo;
     this.game.act(player, action);
     if (overrun > 0) this.timeBank.set(player, Math.max(0, this.timeBank.get(player)! - overrun));
+    const verb =
+      action.type === "fold" ? "folds" : action.type === "check" ? "checks" : action.type === "call" ? `calls ${toCall}` : `raises to ${action.to}`;
+    this.note(`${shortName(player)} ${verb}${this.game.seats[this.game.seatOf(player)]!.allIn ? " (all in)" : ""}${note}`);
+    if (this.game.street === "done" && this.game.handNo === handBefore) this.noteResults();
     this.afterChange();
   }
 
   show(player: string) {
     this.game.show(player);
+    this.note(`${shortName(player)} shows ${this.game.seats[this.game.seatOf(player)]!.cards.join(" ")}`);
     this.events.update();
+  }
+
+  private note(line: string) {
+    this.log.push(line);
+    if (this.log.length > 200) this.log.shift();
+  }
+
+  private startHand() {
+    this.game.startHand(Date.now());
+    const [sb, bb] = this.game.view().blinds;
+    this.note(`— Hand #${this.game.handNo} · blinds ${sb}/${bb} · ${shortName(this.game.seats[this.game.button]!.id)} has the button`);
+    // Blinds alone can put everyone all in; the hand then runs out with no actions.
+    if (this.game.street === "done") this.noteResults();
+    this.afterChange();
+  }
+
+  private noteResults() {
+    if (this.game.board.length) this.note(`Board: ${this.game.board.join(" ")}`);
+    for (const s of this.game.seats) if (s.shown && !s.folded && !s.out) this.note(`${shortName(s.id)} shows ${s.cards.join(" ")}`);
+    for (const pot of this.game.lastResult) {
+      this.note(`${pot.winners.map(shortName).join(" & ")} ${pot.winners.length > 1 ? "split" : "wins"} ${pot.amount}${pot.hand ? ` with ${pot.hand}` : ""}`);
+    }
+    for (const [id, place] of this.game.places) {
+      if (!this.log.some(l => l.startsWith(`${shortName(id)} finishes`))) this.note(`${shortName(id)} finishes #${place}`);
+    }
   }
 
   disconnect(player: string) {
@@ -90,7 +126,7 @@ export class TableRunner {
 
   private autoAct(player: string) {
     const legal = this.game.legal(player);
-    this.act(player, legal.canCheck ? { type: "check" } : { type: "fold" });
+    this.act(player, legal.canCheck ? { type: "check" } : { type: "fold" }, this.connected.has(player) ? " (timed out)" : " (away)");
   }
 
   private afterChange() {
@@ -101,10 +137,7 @@ export class TableRunner {
     if (this.game.street === "done") {
       if (this.game.finished) return this.events.finished(this.game.places);
       const pause = TIMING.betweenHandsMs + (this.game.canShow !== null ? TIMING.showWindowMs : 0);
-      this.timer = setTimeout(() => {
-        this.game.startHand(Date.now());
-        this.afterChange();
-      }, pause);
+      this.timer = setTimeout(() => this.startHand(), pause);
       return;
     }
 

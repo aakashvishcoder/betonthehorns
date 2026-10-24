@@ -9,7 +9,8 @@
     "start": "node src/main.ts",
     "test": "node --test --test-timeout=60000 \"src/**/*.test.ts\"",
     "test:devnet": "node --test src/devnet.e2e.ts",
-    "check": "tsc"
+    "check": "tsc",
+    "prototype": "node src/prototype.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

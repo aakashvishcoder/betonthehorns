@@ -82,6 +82,14 @@ npm run test:devnet   # two bots play a real game settled on devnet (~0.03 devne
 npm start             # game server on ws://localhost:8787 against devnet
 ```
 
+### Offline prototype (no Solana)
+
+```bash
+cd server && npm run prototype   # then open http://localhost:8080 in a few tabs
+```
+
+The same game server, with the horns_elo program swapped for `MemoryChain` (auto-registers wallets at 1200, checks the seed reveal, applies the identical Elo). Each browser tab makes its own ed25519 wallet and signs in like Phantom would. "Fill table with bots" seats bots so one tab can play any mode. Ratings reset when the prototype restarts.
+
 `npm start` signs as the game server with `~/.config/solana/horns-elo-server.json`. Override with `PORT`, `SOLANA_RPC` and `SERVER_KEYPAIR`.
 
 | File | What it does |
@@ -94,3 +102,6 @@ npm start             # game server on ws://localhost:8787 against devnet
 | `src/auth.ts` | Wallet sign-in |
 | `src/server.ts` | WebSocket protocol (message list at the top of the file) |
 | `src/solana-chain.ts` | Calls to the horns_elo program |
+| `src/elo.ts` | Same integer Elo as the program, for the offline chain |
+| `src/prototype.ts`, `prototype/index.html` | Offline prototype server and test page |
+| `src/bot.ts` | Bot players (fake wallets) |

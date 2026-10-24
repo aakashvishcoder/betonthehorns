@@ -1,12 +1,11 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash, createPrivateKey, sign } from "node:crypto";
-import { Keypair } from "@solana/web3.js";
+import { createHash } from "node:crypto";
 import WebSocket from "ws";
-import { loginMessage } from "./auth.ts";
 import { MemoryChain } from "./chain.ts";
 import { startGameServer } from "./server.ts";
 import { TIMING } from "./table.ts";
+import { fakeWallet } from "./wallet.ts";
 
 const PORT = 18_765;
 const chain = new MemoryChain();
@@ -22,8 +21,7 @@ type Msg = { type: string; [k: string]: any };
 
 /** A test client: a wallet keypair plus a socket that records every message. */
 async function client(register: string[] = []) {
-  const kp = Keypair.generate();
-  const wallet = kp.publicKey.toBase58();
+  const { address: wallet, signLogin } = fakeWallet();
   for (const mode of register) chain.register(wallet, mode as never);
   const socket = new WebSocket(`ws://localhost:${PORT}`);
   const inbox: Msg[] = [];
@@ -43,18 +41,6 @@ async function client(register: string[] = []) {
   const send = (m: object) => socket.send(JSON.stringify(m));
   const challenge = await next(m => m.type === "challenge");
 
-  const signLogin = (nonce: string) => {
-    const key = createPrivateKey({
-      key: {
-        kty: "OKP",
-        crv: "Ed25519",
-        d: Buffer.from(kp.secretKey.slice(0, 32)).toString("base64url"),
-        x: Buffer.from(kp.publicKey.toBytes()).toString("base64url"),
-      },
-      format: "jwk",
-    });
-    return sign(null, Buffer.from(loginMessage(nonce)), key).toString("base64");
-  };
   const login = async () => {
     send({ type: "login", wallet, signature: signLogin(challenge.nonce) });
     return next(m => m.type === "welcome" || m.type === "error");
