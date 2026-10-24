@@ -9,6 +9,9 @@ skip-lint = false
 [programs.localnet]
 horns_elo = "E4WuDUxqymTCF7rqQz4a4ZmVhWuQJe9Pbrmy7uia5Bbo"
 
+[programs.devnet]
+horns_elo = "E4WuDUxqymTCF7rqQz4a4ZmVhWuQJe9Pbrmy7uia5Bbo"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
