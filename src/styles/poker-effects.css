@@ -1,0 +1,771 @@
+.deferred-poker-effect {
+  width: 100%;
+  height: 100%;
+}
+
+.effects-motion-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid #6f2088;
+  border-radius: 999px;
+  background: #141016;
+  color: #edd3fb;
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    background 180ms,
+    border-color 180ms;
+}
+.effects-motion-toggle:hover {
+  background: #3b0949;
+  border-color: #d081f1;
+}
+.effects-motion-toggle[aria-pressed="true"] {
+  background: #430e1d;
+  border-color: #8c2542;
+  color: #f8d3d8;
+}
+.effects-motion-toggle:disabled {
+  opacity: 0.65;
+}
+.site-shell[data-motion-paused="true"] .hero-render,
+.site-shell[data-motion-paused="true"] .hero-floating-chip,
+.site-shell[data-motion-paused="true"] .marquee-track {
+  animation-play-state: paused !important;
+}
+
+/* One visual world, rather than five separate component displays. */
+.poker-night-world {
+  position: relative;
+  isolation: isolate;
+  background: radial-gradient(ellipse at 79% 24%, #3b094914, transparent 42%);
+}
+.poker-night-world::before {
+  content: "";
+  position: absolute;
+  top: 360px;
+  left: 13%;
+  width: 68%;
+  height: 1300px;
+  border-left: 1px solid #8625a61c;
+  border-radius: 60%;
+  transform: rotate(19deg);
+  pointer-events: none;
+  z-index: 0;
+}
+.poker-world-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+.world-light-ribbon {
+  position: absolute;
+  top: 50px;
+  left: -10%;
+  width: 120%;
+  height: 1450px;
+  opacity: 0.46;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 15%,
+    #000 62%,
+    transparent
+  );
+}
+.world-card-shards {
+  position: absolute;
+  top: 8px;
+  right: -9%;
+  width: 68%;
+  height: 790px;
+  opacity: 0.19;
+  mask-image: linear-gradient(
+    125deg,
+    transparent 8%,
+    #000 36%,
+    #000 70%,
+    transparent 97%
+  );
+}
+.plasma-static-light {
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse at 80% 28%, #8625a629, transparent 48%),
+    radial-gradient(ellipse at 21% 65%, #b92d5017, transparent 45%);
+}
+.poker-night-world > .hero,
+.poker-night-world > .experience-section,
+.poker-night-world > .night-planning-section {
+  position: relative;
+  z-index: 1;
+}
+.poker-suit-fallback {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.poker-suit-fallback span {
+  position: absolute;
+  color: #8625a6;
+  font-family: Georgia, serif;
+  font-size: 42px;
+  opacity: 0.35;
+}
+.poker-suit-fallback span:nth-child(1) {
+  top: 13%;
+  left: 14%;
+  transform: rotate(-22deg);
+}
+.poker-suit-fallback span:nth-child(2) {
+  top: 24%;
+  right: 9%;
+  color: #b92d50;
+  transform: rotate(17deg);
+}
+.poker-suit-fallback span:nth-child(3) {
+  bottom: 24%;
+  left: 9%;
+  transform: rotate(20deg);
+}
+.poker-suit-fallback span:nth-child(4) {
+  bottom: 8%;
+  right: 14%;
+  color: #c73757;
+  transform: rotate(-18deg);
+}
+
+.cohesive-site .site-header {
+  border-bottom-color: #3b09494d;
+}
+.cohesive-site .hero {
+  min-height: 680px;
+  padding-block: 50px 84px;
+  gap: 0;
+}
+.cohesive-site .hero-copy {
+  width: 47%;
+  position: relative;
+  z-index: 4;
+}
+.cohesive-site .hero-art {
+  width: 55%;
+  height: 550px;
+  margin-right: -38px;
+  z-index: 2;
+}
+.cohesive-site .hero-scroll {
+  z-index: 5;
+  border-color: #6f208880;
+}
+.poker-hero-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  perspective: 1200px;
+}
+.scene-deck-trail {
+  position: absolute;
+  top: -35px;
+  right: -74px;
+  width: 110%;
+  height: 650px;
+  opacity: 0.19;
+  z-index: 0;
+  pointer-events: none;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 23%,
+    #000 72%,
+    transparent
+  );
+}
+.scene-deck-trail .infinite-spiral {
+  min-height: 0;
+  background: transparent;
+}
+.scene-hand {
+  position: absolute;
+  inset: 25px 0 80px;
+  z-index: 3;
+  perspective: 1400px;
+}
+.scene-card-effect {
+  position: absolute;
+  width: clamp(165px, 18vw, 234px);
+  height: auto;
+  aspect-ratio: 2 / 3;
+}
+.scene-card-effect .scene-holo-card {
+  width: 100%;
+  height: 100%;
+  display: block;
+  aspect-ratio: 2 / 3;
+}
+.scene-ace-effect {
+  left: 16%;
+  top: 11%;
+  transform: rotate(-14deg);
+  z-index: 3;
+}
+.scene-king-effect {
+  left: 49%;
+  top: 4%;
+  transform: rotate(14deg);
+  z-index: 2;
+}
+.scene-felt {
+  position: absolute;
+  left: 7%;
+  right: -1%;
+  bottom: 64px;
+  height: 145px;
+  border: 1px solid #8625a644;
+  border-bottom: 3px solid #3b0949;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 40%, #3b094952, #0d0b10 74%);
+  box-shadow:
+    0 20px 0 -8px #16071c,
+    0 31px 28px -16px #000;
+  transform: rotateX(53deg);
+  pointer-events: none;
+  z-index: 1;
+}
+.scene-chip-stack {
+  position: absolute;
+  left: 7%;
+  bottom: 97px;
+  width: 155px;
+  height: 105px;
+  z-index: 4;
+  pointer-events: none;
+}
+.scene-chip-stack .poker-chip {
+  position: absolute;
+  width: 76px;
+  height: 76px;
+  transform: rotateX(47deg) rotateY(-10deg) rotateZ(-17deg);
+}
+.scene-chip-stack .poker-chip:nth-child(1) {
+  left: 0;
+  top: 24px;
+}
+.scene-chip-stack .poker-chip:nth-child(2) {
+  left: 48px;
+  top: 0;
+  transform: rotateX(46deg) rotateY(8deg) rotateZ(15deg);
+}
+.scene-chip-stack .poker-chip:nth-child(3) {
+  left: 86px;
+  top: 30px;
+  transform: rotateX(48deg) rotateY(4deg) rotateZ(-10deg);
+}
+.scene-chip-stack .chip-rim span {
+  font-size: 15px;
+}
+.scene-caption {
+  position: absolute;
+  bottom: 8px;
+  left: 12%;
+  right: 3%;
+  text-align: center;
+  z-index: 4;
+}
+.scene-caption > :first-child {
+  display: block;
+  color: #edd3fb;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+.scene-caption > :last-child {
+  display: block;
+  margin-top: 6px;
+  color: #b9aebe;
+  font-size: 9px;
+}
+.holo-card-fallback {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 2 / 3;
+  border: 4px double #6f2088;
+  border-radius: 12px;
+  background: #fbf5fe;
+  color: #000;
+  font-family: Georgia, serif;
+}
+.holo-card-fallback > span {
+  position: absolute;
+  top: 10px;
+  left: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 24px;
+  line-height: 1.1;
+}
+.holo-card-fallback > span:last-child {
+  top: auto;
+  left: auto;
+  bottom: 10px;
+  right: 11px;
+  transform: rotate(180deg);
+}
+.holo-card-fallback small {
+  font-size: 19px;
+}
+.holo-card-fallback b {
+  font-size: 75px;
+  font-weight: 400;
+}
+.scene-king-effect .holo-card-fallback {
+  color: #b92d50;
+  border-color: #8c2542;
+}
+
+/* Content follows the same scene instead of introducing a new demo box. */
+.cohesive-site .suit-marquee {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  background: transparent;
+  opacity: 0.62;
+  height: 72px;
+}
+.cohesive-site .suit-marquee .marquee-track {
+  animation-duration: 55s;
+}
+.cohesive-site .experience-section {
+  padding-top: 76px;
+  padding-bottom: 80px;
+}
+.cohesive-site .experience-layout {
+  margin-top: 34px;
+}
+.cohesive-site .feature-story {
+  border-bottom-color: #3b09494d;
+}
+.cohesive-site .small-feature {
+  border-bottom-color: #3b09494d;
+}
+.cohesive-site .night-planning-section {
+  border-top: 0;
+  padding-top: 45px;
+  padding-bottom: 85px;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 80px;
+}
+.cohesive-site .night-planning-section .how-heading h2 {
+  font-size: clamp(39px, 4.2vw, 54px);
+  line-height: 1.1;
+  letter-spacing: -2.5px;
+}
+.how-house-rule {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #b9aebe;
+  font-size: 10px;
+  margin-top: 33px;
+}
+.how-house-rule span {
+  color: #d081f1;
+  font-family: Georgia, serif;
+  font-size: 22px;
+}
+.night-planner {
+  min-width: 0;
+}
+.poker-night-menu {
+  height: 270px;
+}
+.poker-night-menu .flowing-menu__label {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(20px, 2.5vw, 31px);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+.poker-night-menu .flowing-menu__link {
+  padding-inline: 17px;
+  gap: 15px;
+}
+.poker-night-menu .flowing-menu__index {
+  font-size: 10px;
+  color: #d081f1;
+}
+.poker-night-menu .flowing-menu__part-text {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 29px;
+}
+.poker-night-menu .flowing-menu__part-image {
+  width: 53px;
+  height: 60px;
+}
+.poker-night-menu .flowing-menu__band {
+  box-shadow: inset 2px 0 #dc576f;
+}
+.night-step-fallback {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.night-step-fallback button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border: 0;
+  border-bottom: 1px solid #3b09494d;
+  background: transparent;
+  color: #fbf5fe;
+  text-align: left;
+  padding: 18px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 24px;
+  letter-spacing: -0.8px;
+}
+.night-step-fallback button[aria-pressed="true"] {
+  background: #3b094944;
+}
+.night-step-fallback button span:first-child {
+  color: #d081f1;
+  font-size: 10px;
+}
+.night-step-detail {
+  min-height: 190px;
+  padding: 24px 15px 8px 19px;
+  margin-top: 25px;
+  margin-left: 17px;
+  border-left: 2px solid #b92d5066;
+}
+.night-step-detail .eyebrow {
+  color: #d081f1;
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.night-step-detail h3 {
+  font-size: 21px;
+  letter-spacing: -0.6px;
+  margin-top: 10px;
+}
+.night-step-detail p {
+  color: #b9aebe;
+  font-size: 12px;
+  line-height: 1.85;
+  margin-top: 12px;
+  max-width: 430px;
+}
+.night-step-detail .night-step-extra {
+  font-size: 11px;
+  margin-top: 9px;
+}
+.night-planner-cta {
+  margin-top: 14px;
+  margin-left: 37px;
+  color: #e1b0f7;
+}
+.cohesive-site main .manifesto-section {
+  position: relative;
+  background: transparent;
+  border: 0;
+}
+.cohesive-site .manifesto-inner {
+  padding-block: 72px 62px;
+  position: relative;
+}
+.cohesive-site .manifesto-inner::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, #6f20884d, transparent);
+}
+.cohesive-site .faq-section {
+  padding-block: 67px 85px;
+}
+.cohesive-site .closing-section {
+  background:
+    radial-gradient(ellipse at 84% 60%, #430e1d65, transparent 65%),
+    linear-gradient(to bottom, transparent, #3b094918);
+}
+.cohesive-site .closing-star {
+  font-size: 110px;
+  opacity: 0.45;
+}
+
+@media (max-width: 1100px) {
+  .cohesive-site .hero-art {
+    height: 490px;
+  }
+  .scene-deck-trail {
+    height: 590px;
+    right: -48px;
+  }
+  .scene-card-effect {
+    width: clamp(160px, 18vw, 210px);
+  }
+  .scene-ace-effect {
+    left: 11%;
+  }
+  .scene-king-effect {
+    left: 46%;
+  }
+  .scene-caption {
+    bottom: 3px;
+  }
+  .scene-felt {
+    bottom: 60px;
+    height: 124px;
+  }
+  .scene-chip-stack {
+    left: 1%;
+    bottom: 75px;
+    transform: scale(0.88);
+    transform-origin: bottom left;
+  }
+  .cohesive-site .night-planning-section {
+    gap: 42px;
+  }
+  .poker-night-menu .flowing-menu__label {
+    font-size: 25px;
+  }
+}
+@media (max-width: 760px) {
+  .effects-motion-toggle {
+    width: 38px;
+    min-height: 38px;
+    padding: 8px;
+  }
+  .effects-motion-toggle span {
+    display: none;
+  }
+  .cohesive-site .hero {
+    min-height: 0;
+    flex-direction: column;
+    padding-top: 36px;
+    padding-bottom: 37px;
+  }
+  .cohesive-site .hero-copy {
+    width: 100%;
+  }
+  .cohesive-site .hero-art {
+    width: min(100%, 470px);
+    height: 430px;
+    margin: 0 auto;
+  }
+  .cohesive-site .hero-scroll {
+    display: none;
+  }
+  .scene-deck-trail {
+    top: -35px;
+    right: -20px;
+    width: 107%;
+    height: 495px;
+    opacity: 0.13;
+  }
+  .scene-hand {
+    inset: 10px 0 68px;
+  }
+  .scene-card-effect {
+    width: clamp(144px, 39vw, 178px);
+  }
+  .scene-ace-effect {
+    left: 12%;
+    top: 13%;
+    transform: rotate(-13deg);
+  }
+  .scene-king-effect {
+    left: 49%;
+    top: 6%;
+    transform: rotate(13deg);
+  }
+  .scene-felt {
+    left: 2%;
+    right: 0;
+    bottom: 48px;
+    height: 125px;
+  }
+  .scene-chip-stack {
+    left: 1%;
+    bottom: 58px;
+    transform: scale(0.73);
+  }
+  .scene-caption {
+    bottom: 3px;
+    left: 6%;
+    right: 6%;
+  }
+  .world-light-ribbon {
+    top: 310px;
+    left: -35%;
+    width: 170%;
+    height: 1600px;
+    opacity: 0.36;
+  }
+  .world-card-shards {
+    top: 310px;
+    right: -25%;
+    width: 125%;
+    height: 630px;
+    opacity: 0.12;
+  }
+  .poker-night-world::before {
+    top: 710px;
+    left: 2%;
+    width: 96%;
+    height: 1330px;
+    opacity: 0.65;
+  }
+  .cohesive-site .suit-marquee {
+    height: 63px;
+  }
+  .cohesive-site .experience-section {
+    padding-top: 38px;
+    padding-bottom: 45px;
+  }
+  .cohesive-site .experience-layout {
+    margin-top: 27px;
+  }
+  .cohesive-site .night-planning-section {
+    padding-top: 25px;
+    padding-bottom: 53px;
+    gap: 30px;
+    grid-template-columns: 1fr;
+  }
+  .cohesive-site .night-planning-section .how-heading h2 {
+    font-size: 38px;
+    letter-spacing: -1.9px;
+  }
+  .how-house-rule {
+    margin-top: 20px;
+  }
+  .poker-night-menu {
+    height: 230px;
+  }
+  .poker-night-menu .flowing-menu__label {
+    font-size: clamp(20px, 5.8vw, 26px);
+  }
+  .poker-night-menu .flowing-menu__link {
+    padding-inline: 10px;
+    gap: 12px;
+  }
+  .poker-night-menu .flowing-menu__part-text {
+    font-size: 23px;
+  }
+  .night-step-detail {
+    margin-left: 10px;
+    margin-top: 20px;
+    padding: 20px 0 5px 15px;
+    min-height: 185px;
+  }
+  .night-step-detail h3 {
+    font-size: 20px;
+  }
+  .night-planner-cta {
+    margin-left: 27px;
+  }
+  .cohesive-site .manifesto-inner {
+    padding-block: 45px;
+  }
+  .cohesive-site .faq-section {
+    padding-block: 43px 50px;
+  }
+  .cohesive-site .closing-star {
+    display: none;
+  }
+}
+@media (max-width: 370px) {
+  .cohesive-site .hero-art {
+    height: 385px;
+  }
+  .scene-card-effect {
+    width: 138px;
+  }
+  .scene-ace-effect {
+    left: 8%;
+  }
+  .scene-king-effect {
+    left: 47%;
+  }
+  .scene-deck-trail {
+    height: 455px;
+  }
+  .scene-felt {
+    height: 105px;
+  }
+  .poker-night-menu .flowing-menu__label {
+    font-size: 19px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .effects-motion-toggle {
+    transition: none;
+  }
+  .scene-deck-trail {
+    opacity: 0.12;
+  }
+  .world-card-shards {
+    opacity: 0.1;
+  }
+}
+
+/* The spiral belongs beside the story, not hidden behind the hero hand. */
+.how-deck-moment {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  max-width: 360px;
+}
+.planning-deck-trail {
+  width: 190px;
+  height: 170px;
+  flex: 0 0 190px;
+  opacity: 0.72;
+  pointer-events: none;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 14%,
+    #000 85%,
+    transparent
+  );
+}
+.planning-deck-trail .infinite-spiral {
+  background: transparent;
+  min-height: 0;
+}
+.how-deck-caption {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #b9aebe;
+}
+@media (max-width: 760px) {
+  .how-deck-moment {
+    margin-top: 7px;
+    gap: 8px;
+  }
+  .planning-deck-trail {
+    width: 155px;
+    flex-basis: 155px;
+    height: 150px;
+  }
+  .how-deck-caption {
+    font-size: 10px;
+  }
+}

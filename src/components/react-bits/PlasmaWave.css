@@ -1,0 +1,39 @@
+/* Static poker-violet fallback is visible only until the supplied WebGL renderer is ready. */
+.plasma-wave-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(
+      ellipse 70% 85% at 15% 105%,
+      rgb(147 45 185 / 42%),
+      transparent 68%
+    ),
+    radial-gradient(
+      ellipse 66% 68% at 89% -8%,
+      rgb(199 55 87 / 38%),
+      transparent 66%
+    ),
+    linear-gradient(135deg, #100512 0%, #210a24 48%, #16050e 100%);
+}
+
+.plasma-wave-container[data-plasma-ready="true"] {
+  background: transparent;
+}
+
+.plasma-wave-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plasma-wave-canvas {
+    animation: none;
+  }
+}

@@ -1,0 +1,580 @@
+.table-page {
+  max-width: 1420px;
+  margin: 0 auto;
+  padding: 32px 34px 44px;
+}
+.table-page .club-page-heading {
+  margin-bottom: 24px;
+}
+.table-page .club-page-heading h1 {
+  font-size: clamp(30px, 4vw, 48px);
+}
+.table-back-link {
+  white-space: nowrap;
+}
+.table-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  align-items: start;
+}
+.table-primary,
+.table-sidebar {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.tabletop-panel,
+.table-actions-panel,
+.table-notes-panel,
+.table-chat-panel {
+  padding: 20px;
+}
+.tabletop-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+.tabletop-header .club-section-heading,
+.table-sidebar .club-section-heading {
+  margin-top: 6px;
+  font-size: 18px;
+  letter-spacing: -0.5px;
+}
+.tabletop-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.table-design-leaf {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #e1b0f7;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
+.table-card-toggle {
+  min-height: 36px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tabletop-scene {
+  position: relative;
+  min-height: 580px;
+  margin-top: 16px;
+  isolation: isolate;
+  overflow: hidden;
+}
+.table-page .table-oval {
+  position: absolute;
+  inset: 9% 6% 15%;
+  width: auto;
+  height: auto;
+  border: 1px solid #6f2088;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 50% 42%,
+    #211127 0%,
+    #120d16 62%,
+    #09080a 100%
+  );
+  box-shadow:
+    inset 0 0 0 9px #0b090d,
+    inset 0 0 56px #3b094955,
+    0 16px 34px #0008;
+}
+.table-seat {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 122px;
+}
+.table-seat-card {
+  padding: 6px 8px;
+  border: 1px solid #3b0949;
+  border-radius: 7px;
+  background: #120e15e8;
+  line-height: 1.15;
+}
+.table-seat-card strong,
+.table-seat-card span,
+.table-seat-card b {
+  display: block;
+}
+.table-seat-card strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+.table-seat-card strong em {
+  margin-left: 5px;
+  color: #e1b0f7;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+}
+.table-seat-card span {
+  margin-top: 3px;
+  color: #d7c4dc;
+  font-size: 10px;
+}
+.table-seat-card small {
+  color: #a999ae;
+  font-size: 9px;
+}
+.table-seat-card b {
+  margin-top: 4px;
+  color: #fbf5fe;
+  font-size: 9px;
+  font-weight: 600;
+}
+.table-seat.is-current .table-seat-card {
+  border-color: #ba50e5;
+  background: #4e1764;
+  box-shadow: none;
+}
+.table-seat--top {
+  top: 1%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.table-seat--upper-left {
+  top: 25%;
+  left: 1%;
+}
+.table-seat--upper-right {
+  top: 25%;
+  right: 1%;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+.table-seat--lower-left {
+  top: 65%;
+  left: 5%;
+}
+.table-seat--lower-right {
+  top: 65%;
+  right: 5%;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+.table-seat--you {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.table-board {
+  position: absolute;
+  z-index: 3;
+  top: 37%;
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+.table-board .club-deck-card,
+.table-board .holo-card {
+  width: 72px;
+}
+.table-board .club-deck-image {
+  width: 72px;
+  aspect-ratio: 2 / 3;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.table-board .club-deck-image img,
+.table-board .club-card-fallback {
+  width: 100%;
+  height: 100%;
+}
+.table-pot {
+  position: absolute;
+  z-index: 3;
+  top: 58%;
+  left: 50%;
+  display: grid;
+  min-width: 100px;
+  transform: translateX(-50%);
+  place-items: center;
+  color: #e1b0f7;
+  text-transform: uppercase;
+}
+.table-pot span,
+.table-pot small {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+.table-pot strong {
+  color: #fbf5fe;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 24px;
+  line-height: 1.1;
+}
+.table-hand-label {
+  position: absolute;
+  z-index: 3;
+  top: 66%;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #d9b6e8;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.table-player-cards {
+  position: absolute;
+  z-index: 4;
+  top: 69%;
+  left: 50%;
+  display: flex;
+  gap: 10px;
+  transform: translateX(-50%);
+}
+.table-player-cards .club-deck-card,
+.table-player-cards .holo-card {
+  width: 70px;
+}
+.table-player-cards .club-deck-image {
+  width: 70px;
+  aspect-ratio: 2 / 3;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.table-player-cards .club-deck-image img,
+.table-player-cards .club-card-fallback {
+  width: 100%;
+  height: 100%;
+}
+.tabletop-footer {
+  display: flex;
+  gap: 18px;
+  border-top: 1px solid #3b0949;
+  padding-top: 14px;
+  color: #b9aebe;
+  font-size: 11px;
+}
+.tabletop-footer strong {
+  color: #fbf5fe;
+  font-weight: 600;
+}
+.table-actions-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 16px 20px;
+  align-items: center;
+}
+.table-actions-copy p {
+  margin-top: 5px;
+  color: #d9cde0;
+  font-size: 13px;
+}
+.table-actions {
+  display: flex;
+  gap: 8px;
+}
+.table-actions .club-button {
+  min-height: 39px;
+  padding-inline: 14px;
+}
+.table-actions .is-selected {
+  outline: 1px solid #e1b0f7;
+  outline-offset: 2px;
+}
+.table-raise-control {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  color: #c9bbcf;
+  font-size: 11px;
+}
+.table-raise-control input {
+  width: 100%;
+  accent-color: #ba50e5;
+}
+.table-raise-control output {
+  color: #fbf5fe;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.table-notes-panel dl {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+.table-notes-panel dl div {
+  border-bottom: 1px solid #3b0949;
+  padding-bottom: 10px;
+}
+.table-notes-panel dt {
+  color: #b9aebe;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.table-notes-panel dd {
+  margin: 4px 0 0;
+  color: #f3eafa;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.table-chat-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.table-chat-heading > svg {
+  color: #d081f1;
+}
+.table-chat-list {
+  display: grid;
+  gap: 12px;
+  margin: 17px 0;
+  padding: 0;
+  list-style: none;
+}
+.table-chat-list li {
+  display: grid;
+  gap: 3px;
+  border-left: 2px solid #6f2088;
+  padding-left: 9px;
+}
+.table-chat-list strong {
+  color: #e1b0f7;
+  font-size: 11px;
+}
+.table-chat-list span {
+  color: #d5c8da;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.table-chat-form {
+  border-top: 1px solid #3b0949;
+  padding-top: 13px;
+}
+.table-chat-form label {
+  display: block;
+  margin-bottom: 7px;
+  color: #c9bbcf;
+  font-size: 11px;
+}
+.table-chat-form > div {
+  display: flex;
+  gap: 7px;
+}
+.table-chat-form input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #5e206f;
+  border-radius: 5px;
+  background: #0d0b10;
+  color: #fbf5fe;
+  padding: 9px;
+  font: inherit;
+  font-size: 12px;
+}
+.table-chat-form .club-button {
+  padding-inline: 11px;
+  font-size: 11px;
+}
+.table-chat-form p {
+  margin-top: 8px;
+  color: #95899b;
+  font-size: 10px;
+  line-height: 1.35;
+}
+@media (max-width: 1120px) {
+  .table-layout {
+    grid-template-columns: minmax(0, 1fr) 235px;
+  }
+  .table-seat--upper-left {
+    left: 0;
+  }
+  .table-seat--upper-right {
+    right: 0;
+  }
+  .table-seat--lower-left {
+    left: 1%;
+  }
+  .table-seat--lower-right {
+    right: 1%;
+  }
+}
+@media (max-width: 1120px) {
+  .table-layout {
+    grid-template-columns: 1fr;
+  }
+  .table-sidebar {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 620px) {
+  .table-page {
+    padding: 22px 14px 32px;
+  }
+  .table-page .club-page-heading {
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .table-page .club-page-heading h1 {
+    font-size: 29px;
+  }
+  .tabletop-panel,
+  .table-actions-panel,
+  .table-notes-panel,
+  .table-chat-panel {
+    padding: 14px;
+  }
+  .tabletop-header {
+    display: block;
+  }
+  .tabletop-controls {
+    justify-content: flex-start;
+    margin-top: 12px;
+  }
+  .tabletop-scene {
+    min-height: 500px;
+    margin-inline: -5px;
+  }
+  .table-page .table-oval {
+    inset: 11% 0 15%;
+  }
+  .table-seat {
+    min-width: auto;
+    gap: 4px;
+  }
+  .table-seat .club-avatar {
+    --avatar-size: 28px !important;
+  }
+  .table-seat-card {
+    padding: 4px 5px;
+  }
+  .table-seat-card strong {
+    font-size: 10px;
+  }
+  .table-seat-card span {
+    font-size: 8px;
+  }
+  .table-seat-card small,
+  .table-seat-card b {
+    display: none;
+  }
+  .table-seat--top {
+    top: 2%;
+  }
+  .table-seat--upper-left {
+    top: 25%;
+    left: 0;
+  }
+  .table-seat--upper-right {
+    top: 25%;
+    right: 0;
+  }
+  .table-seat--lower-left {
+    top: 65%;
+    left: 0;
+  }
+  .table-seat--lower-right {
+    top: 65%;
+    right: 0;
+  }
+  .table-board {
+    top: 38%;
+    gap: 4px;
+  }
+  .table-board .club-deck-card,
+  .table-board .holo-card {
+    width: 44px;
+  }
+  .table-board .club-deck-image {
+    width: 44px;
+    border-radius: 5px;
+  }
+  .table-pot {
+    top: 57%;
+  }
+  .table-pot strong {
+    font-size: 20px;
+  }
+  .table-hand-label {
+    top: 65%;
+    font-size: 9px;
+  }
+  .table-player-cards {
+    top: 70%;
+    gap: 7px;
+  }
+  .table-player-cards .club-deck-card,
+  .table-player-cards .holo-card {
+    width: 62px;
+  }
+  .table-player-cards .club-deck-image {
+    width: 62px;
+    border-radius: 6px;
+  }
+  .tabletop-footer {
+    gap: 10px;
+    justify-content: space-between;
+    font-size: 10px;
+  }
+  .tabletop-footer .club-muted {
+    display: none;
+  }
+  .table-actions-panel {
+    grid-template-columns: 1fr;
+  }
+  .table-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .table-actions .club-button {
+    min-width: 0;
+    padding-inline: 6px;
+  }
+  .table-raise-control {
+    grid-template-columns: 1fr auto;
+  }
+  .table-raise-control input {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .table-sidebar {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 390px) {
+  .table-page {
+    padding-inline: 10px;
+  }
+  .table-board {
+    gap: 3px;
+  }
+  .table-seat-card {
+    max-width: 72px;
+    overflow: hidden;
+  }
+  .table-seat-card span {
+    white-space: nowrap;
+  }
+}
+
+/* Keep pot units, hand caption, and hole cards in separate readable bands. */
+.table-pot span,
+.table-pot small {
+  line-height: 1;
+}
+.table-hand-label {
+  line-height: 1.2;
+}
+@media (max-width: 620px) {
+  .table-hand-label {
+    top: 66%;
+  }
+}

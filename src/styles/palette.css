@@ -1,0 +1,24 @@
+@theme {
+  --color-violet-eggplant-50: #fbf5fe;
+  --color-violet-eggplant-100: #f6e9fe;
+  --color-violet-eggplant-200: #edd3fb;
+  --color-violet-eggplant-300: #e1b0f7;
+  --color-violet-eggplant-400: #d081f1;
+  --color-violet-eggplant-500: #ba50e5;
+  --color-violet-eggplant-600: #932db9;
+  --color-violet-eggplant-700: #8625a6;
+  --color-violet-eggplant-800: #6f2088;
+  --color-violet-eggplant-900: #5e206f;
+  --color-violet-eggplant-950: #3b0949;
+  --color-maroon-flush-50: #fdf3f4;
+  --color-maroon-flush-100: #fbe8ea;
+  --color-maroon-flush-200: #f8d3d8;
+  --color-maroon-flush-300: #f1b0b8;
+  --color-maroon-flush-400: #e98392;
+  --color-maroon-flush-500: #dc576f;
+  --color-maroon-flush-600: #c73757;
+  --color-maroon-flush-700: #b92d50;
+  --color-maroon-flush-800: #8c2542;
+  --color-maroon-flush-900: #79223d;
+  --color-maroon-flush-950: #430e1d;
+}
