@@ -11,6 +11,11 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "@types/ws": "^8.18.2",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.99.0",
+    "ws": "^8.22.0"
   }
 }
