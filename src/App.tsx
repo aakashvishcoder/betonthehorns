@@ -7,6 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "next-themes";
 import { PokerMotionProvider } from "@/components/poker-app/PokerAppShell";
 import Home from "./pages/Home";
+import CoachWidget from "@/components/coach/CoachWidget";
 
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const PlayPage = lazy(() => import("./pages/PlayPage"));
@@ -50,6 +51,7 @@ export default function App() {
                 <Route component={NotFound} />
               </Switch>
             </Suspense>
+            <CoachWidget />
           </PokerMotionProvider>
         </TooltipProvider>
       </ThemeProvider>

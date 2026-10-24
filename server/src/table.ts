@@ -29,6 +29,8 @@ export class TableRunner {
   readonly game: SitAndGo;
   readonly connected: Set<string>;
   readonly timeBank: Map<string, number>;
+  /** Ranked games count for Elo and settle on-chain; practice games don't. */
+  ranked = true;
   /** When the current turn's base timer started. */
   turnStartedAt = 0;
   /** PokerNow-style running log of the game. */

@@ -1,9 +1,12 @@
-// Runs the game server against the deployed horns_elo program.
-//   node src/main.ts
-// Env: PORT (8787), SOLANA_RPC (devnet), SERVER_KEYPAIR (~/.config/solana/horns-elo-server.json)
+// Runs the game server against the deployed horns_elo program, plus the AI coach endpoint.
+//   npm start
+// Env (server/.env is loaded automatically): PORT (8787), SOLANA_RPC (devnet),
+// SERVER_KEYPAIR (~/.config/solana/horns-elo-server.json), MODEL_API_KEY (Muse coach)
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { Connection, Keypair, clusterApiUrl } from "@solana/web3.js";
+import { coachHandler } from "./coach.ts";
 import { startGameServer } from "./server.ts";
 import { SolanaChain } from "./solana-chain.ts";
 
@@ -11,10 +14,14 @@ const port = Number(process.env.PORT ?? 8787);
 const rpc = process.env.SOLANA_RPC ?? clusterApiUrl("devnet");
 const keypairPath = process.env.SERVER_KEYPAIR ?? `${homedir()}/.config/solana/horns-elo-server.json`;
 const server = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(keypairPath, "utf8"))));
+const log = (msg: string) => console.log(new Date().toISOString(), msg);
 
-startGameServer({
-  port,
-  chain: new SolanaChain(new Connection(rpc, "confirmed"), server),
-  log: msg => console.log(new Date().toISOString(), msg),
+const coach = coachHandler({ apiKey: process.env.MODEL_API_KEY, inRankedGame: w => game.inRankedGame(w), log });
+const http = createServer((req, res) => {
+  if (req.url === "/api/coach") return void coach(req, res);
+  res.writeHead(404).end();
 });
+const game = startGameServer({ server: http, chain: new SolanaChain(new Connection(rpc, "confirmed"), server), log });
+http.listen(port);
 console.log(`Game server on ws://localhost:${port} (result authority ${server.publicKey.toBase58()}, ${rpc})`);
+console.log(`Coach: ${process.env.MODEL_API_KEY ? "on" : "off (set MODEL_API_KEY in server/.env)"}`);

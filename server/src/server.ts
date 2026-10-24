@@ -10,7 +10,7 @@ import { TableRunner } from "./table.ts";
 /**
  * Messages from clients (JSON):
  *   { type: "login", wallet, signature }     signature = base64 ed25519 of loginMessage(nonce)
- *   { type: "queue", mode } | { type: "leave_queue" }
+ *   { type: "queue", mode, practice? } | { type: "leave_queue" }   practice = unranked, no Elo, nothing on-chain
  *   { type: "action", action }               action = fold | check | call | { type: "raise", to }
  *   { type: "show" }                         reveal cards after an uncontested win
  *   { type: "chat", text }
@@ -31,6 +31,8 @@ export function startGameServer({ port, server, chain, log = () => {} }: GameSer
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
   const clients = new Set<Client>();
   const matchmaker = new Matchmaker();
+  // Practice: everyone queues at the same rating, so tables fill first come, first served.
+  const practice = new Matchmaker();
   const tables = new Map<string, TableRunner>();
   const tableOf = new Map<string, string>(); // wallet -> table id
 
@@ -42,42 +44,45 @@ export function startGameServer({ port, server, chain, log = () => {} }: GameSer
     const clock = table.clock();
     for (const c of audience(table.id)) {
       const seated = c.wallet !== undefined && tableOf.get(c.wallet) === table.id;
-      send(c, { type: "table", tableId: table.id, mode: table.mode, view: table.game.view(seated ? c.wallet : undefined), clock, log: table.log.slice(-40) });
+      send(c, { type: "table", tableId: table.id, mode: table.mode, ranked: table.ranked, view: table.game.view(seated ? c.wallet : undefined), clock, log: table.log.slice(-40) });
     }
   }
 
-  async function seatTable(mode: Mode, players: string[]) {
+  async function seatTable(mode: Mode, players: string[], ranked: boolean) {
     const seed = randomBytes(32);
-    const matchId = await chain.createMatch(mode, players, createHash("sha256").update(seed).digest());
+    const matchId = ranked ? await chain.createMatch(mode, players, createHash("sha256").update(seed).digest()) : null;
     const tableId = randomUUID();
     const table = new TableRunner(tableId, mode, players, seed, {
       update: () => pushTable(table),
       finished: places => void finish(table, matchId, seed, places),
     });
+    table.ranked = ranked;
     tables.set(tableId, table);
     for (const p of players) {
       tableOf.set(p, tableId);
       const c = byWallet(p);
-      if (c) send(c, { type: "seated", tableId, mode, matchId: matchId.toString() });
+      if (c) send(c, { type: "seated", tableId, mode, ranked, matchId: matchId?.toString() ?? null });
       else table.disconnect(p);
     }
-    log(`table ${tableId} (${mode}, match ${matchId}) seated ${players.join(", ")}`);
+    log(`table ${tableId} (${ranked ? `${mode}, match ${matchId}` : `${mode}, practice`}) seated ${players.join(", ")}`);
     table.start();
   }
 
-  async function finish(table: TableRunner, matchId: bigint, seed: Uint8Array, places: Map<string, number>) {
+  async function finish(table: TableRunner, matchId: bigint | null, seed: Uint8Array, places: Map<string, number>) {
     const ordered = table.players.map(p => places.get(p)!);
     const standings = table.players.map((p, i) => ({ wallet: p, place: ordered[i], stack: table.game.seats[i]!.stack }));
     const standingsHash = createHash("sha256").update(JSON.stringify(standings)).digest();
-    let settled = true;
-    try {
-      await chain.settleMatch(matchId, table.mode, table.players, ordered, seed, standingsHash);
-    } catch (e) {
-      settled = false;
-      log(`settle failed for match ${matchId}: ${(e as Error).message}`);
+    let settled = false;
+    if (matchId !== null) {
+      try {
+        await chain.settleMatch(matchId, table.mode, table.players, ordered, seed, standingsHash);
+        settled = true;
+      } catch (e) {
+        log(`settle failed for match ${matchId}: ${(e as Error).message}`);
+      }
     }
     for (const c of audience(table.id)) {
-      send(c, { type: "finished", tableId: table.id, places: Object.fromEntries(places), settled, seed: Buffer.from(seed).toString("hex") });
+      send(c, { type: "finished", tableId: table.id, ranked: table.ranked, places: Object.fromEntries(places), settled, seed: Buffer.from(seed).toString("hex") });
     }
     for (const p of table.players) tableOf.delete(p);
     table.close();
@@ -86,8 +91,12 @@ export function startGameServer({ port, server, chain, log = () => {} }: GameSer
   }
 
   const tick = setInterval(() => {
-    for (const { mode, players } of matchmaker.tick(Date.now())) {
-      seatTable(mode, players).catch(e => {
+    const formed = [
+      ...matchmaker.tick(Date.now()).map(t => ({ ...t, ranked: true })),
+      ...practice.tick(Date.now()).map(t => ({ ...t, ranked: false })),
+    ];
+    for (const { mode, players, ranked } of formed) {
+      seatTable(mode, players, ranked).catch(e => {
         log(`could not open match: ${(e as Error).message}`);
         for (const p of players) {
           const c = byWallet(p);
@@ -133,7 +142,11 @@ export function startGameServer({ port, server, chain, log = () => {} }: GameSer
         const mode = msg.mode as Mode;
         if (!(mode in MODES)) return fail("Unknown mode.");
         if (tableOf.has(wallet)) return fail("You are already at a table.");
-        if (matchmaker.modeOf(wallet)) return fail("You are already queued.");
+        if (matchmaker.modeOf(wallet) || practice.modeOf(wallet)) return fail("You are already queued.");
+        if (msg.practice === true) {
+          practice.join(mode, wallet, 1200, Date.now());
+          return send(c, { type: "queued", mode, practice: true });
+        }
         const rating = await chain.rating(wallet, mode);
         if (rating === null) return fail(`Register your wallet for ${mode} on-chain before queueing.`);
         matchmaker.join(mode, wallet, rating, Date.now());
@@ -141,6 +154,7 @@ export function startGameServer({ port, server, chain, log = () => {} }: GameSer
       }
       case "leave_queue":
         matchmaker.leave(wallet);
+        practice.leave(wallet);
         return send(c, { type: "left_queue" });
       case "action":
         if (!table) return fail("You are not at a table.");
@@ -189,6 +203,7 @@ export function startGameServer({ port, server, chain, log = () => {} }: GameSer
       clients.delete(c);
       if (!c.wallet || byWallet(c.wallet)) return; // still connected elsewhere
       matchmaker.leave(c.wallet);
+      practice.leave(c.wallet);
       const table = tables.get(tableOf.get(c.wallet) ?? "");
       table?.disconnect(c.wallet);
     });
@@ -198,6 +213,9 @@ export function startGameServer({ port, server, chain, log = () => {} }: GameSer
     wss,
     tables,
     matchmaker,
+    practice,
+    /** True while this wallet is seated at a ranked table (the coach is off then). */
+    inRankedGame: (wallet: string) => tables.get(tableOf.get(wallet) ?? "")?.ranked === true,
     close: () =>
       new Promise<void>(resolve => {
         clearInterval(tick);

@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { runBot } from "./bot.ts";
 import { MemoryChain } from "./chain.ts";
+import { coachHandler } from "./coach.ts";
 import { MODES, type Mode } from "./matchmaker.ts";
 import { startGameServer } from "./server.ts";
 
@@ -22,8 +23,11 @@ export function startPrototype(port: number, options: { botThinkMs?: number; log
     return raw ? JSON.parse(raw) : {};
   };
 
+  const coach = coachHandler({ apiKey: process.env.MODEL_API_KEY, inRankedGame: w => game.inRankedGame(w), log: options.log });
+
   const http = createServer(async (req, res) => {
     try {
+      if (req.url === "/api/coach") return await coach(req, res);
       if (req.method === "GET" && req.url === "/") {
         return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(await readFile(page));
       }
@@ -31,14 +35,15 @@ export function startPrototype(port: number, options: { botThinkMs?: number; log
         return json(res, {
           ratings: [...chain.records.values()],
           queues: Object.fromEntries(Object.keys(MODES).map(m => [m, game.matchmaker.waiting(m as Mode)])),
+          practiceQueues: Object.fromEntries(Object.keys(MODES).map(m => [m, game.practice.waiting(m as Mode)])),
           tables: [...game.tables.values()].map(t => ({ id: t.id, mode: t.mode, players: t.players, hand: t.game.handNo })),
           matches: chain.matches.map(m => ({ id: m.id.toString(), mode: m.mode, players: m.players, places: m.settled?.places ?? null })),
         });
       }
       if (req.method === "POST" && req.url === "/api/bots") {
-        const { mode, count } = await body(req);
+        const { mode, count, practice } = await body(req);
         if (!(mode in MODES) || !(count >= 1 && count <= 5)) return json(res, { error: "mode and count (1-5) required" }, 400);
-        const bots = Array.from({ length: count }, () => runBot(`ws://localhost:${port}`, mode, options.botThinkMs));
+        const bots = Array.from({ length: count }, () => runBot(`ws://localhost:${port}`, mode, options.botThinkMs, practice === true));
         for (const b of bots) b.finished.catch(e => options.log?.(`bot error: ${e.message}`));
         return json(res, { bots: bots.map(b => b.wallet) });
       }

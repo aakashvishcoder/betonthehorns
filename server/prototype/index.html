@@ -92,6 +92,7 @@
         <button id="queueBtn">Queue</button>
         <button id="leaveBtn" class="ghost">Leave queue</button>
         <button id="botsBtn" class="ghost">Fill table with bots</button>
+        <label class="row" style="gap:6px;color:var(--muted)"><input type="checkbox" id="practice"> Practice (unranked)</label>
       </div>
       <div id="status"></div>
       <div id="watchList" style="margin-top:12px"></div>
@@ -180,13 +181,13 @@ socket.onmessage = async e => {
   switch (m.type) {
     case "challenge": return send({ type: "login", wallet: wallet.address, signature: await wallet.sign(`Bet on the Horns login: ${m.nonce}`) });
     case "welcome": return setStatus("Signed in with your wallet signature. Pick a mode and queue.");
-    case "queued": state.queued = m.mode; return setStatus(`Queued for ${MODES[m.mode][0]} at ${m.rating} Elo. Waiting for players within range…`);
+    case "queued": state.queued = m.mode; return setStatus(m.practice ? `Queued for a ${MODES[m.mode][0]} practice table (unranked).` : `Queued for ${MODES[m.mode][0]} at ${m.rating} Elo. Waiting for players within range…`);
     case "left_queue": state.queued = null; return setStatus("Left the queue.");
     case "seated":
       state.queued = null; state.tableId = m.tableId; state.lastLogLen = 0; $("log").replaceChildren(); $("chat").replaceChildren();
       state.ratingsAtSeat = await fetchState().then(s => s.ratings);
       return;
-    case "table": state.tableId = m.tableId; state.view = m.view; state.clock = m.clock; state.clockAt = performance.now(); state.tableMode = m.mode; renderLog(m.log); return render();
+    case "table": state.ranked = m.ranked; state.tableId = m.tableId; state.view = m.view; state.clock = m.clock; state.clockAt = performance.now(); state.tableMode = m.mode; renderLog(m.log); return render();
     case "chat": return addLine($("chat"), `<b>${name(m.from)}</b> ${escape(m.text)}`);
     case "finished": return showResults(m);
     case "error": return setStatus(m.message);
@@ -205,14 +206,15 @@ for (const [mode, [label]] of Object.entries(MODES)) {
 }
 function renderModes() { for (const b of $("modes").children) b.classList.toggle("on", b.dataset.mode === state.mode); }
 renderModes();
-$("queueBtn").onclick = () => send({ type: "queue", mode: state.mode });
+const practice = () => $("practice").checked;
+$("queueBtn").onclick = () => send({ type: "queue", mode: state.mode, practice: practice() });
 $("leaveBtn").onclick = () => send({ type: "leave_queue" });
 $("botsBtn").onclick = async () => {
-  if (state.queued !== state.mode) send({ type: "queue", mode: state.mode });
+  if (state.queued !== state.mode) send({ type: "queue", mode: state.mode, practice: practice() });
   const s = await fetchState();
-  const waiting = s.queues[state.mode] + (state.queued === state.mode ? 0 : 1);
+  const waiting = (practice() ? s.practiceQueues : s.queues)[state.mode] + (state.queued === state.mode ? 0 : 1);
   const count = Math.max(1, MODES[state.mode][1] - waiting);
-  await fetch("/api/bots", { method: "POST", body: JSON.stringify({ mode: state.mode, count }) });
+  await fetch("/api/bots", { method: "POST", body: JSON.stringify({ mode: state.mode, count, practice: practice() }) });
   setStatus(`Added ${count} bot${count > 1 ? "s" : ""} to the ${MODES[state.mode][0]} queue.`);
 };
 
@@ -233,7 +235,7 @@ function render() {
   $("lobby").classList.add("hidden");
   $("tableArea").classList.remove("hidden");
   const seated = v.seats.some(s => s.id === wallet.address);
-  $("tableInfo").textContent = `${MODES[state.tableMode][0]} · ${seated ? "playing" : "watching"} · table ${state.tableId.slice(0, 8)}`;
+  $("tableInfo").textContent = `${MODES[state.tableMode][0]} ${state.ranked ? "ranked" : "practice"} · ${seated ? "playing" : "watching"} · table ${state.tableId.slice(0, 8)}`;
   $("lobbyBtn").classList.toggle("hidden", seated);
   $("hand").textContent = `Hand #${v.handNo} · blinds ${v.blinds[0]}/${v.blinds[1]}`;
   $("pot").innerHTML = `Pot <b>${v.pot}</b>`;

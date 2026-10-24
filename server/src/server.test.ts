@@ -164,3 +164,42 @@ test("an idle player times out after their turn timer and time bank", async () =
   assert.equal(moved.view.seats.find((s: any) => s.id === first).folded, true);
   for (const p of [a, b, c, d]) p.socket.close();
 });
+
+test("practice games need no registration, skip the chain, and don't count as ranked", async () => {
+  const a = await client();
+  const b = await client(); // neither registered on-chain
+  await a.login();
+  await b.login();
+  const matchesBefore = chain.matches.length;
+  a.send({ type: "queue", mode: "heads_up", practice: true });
+  b.send({ type: "queue", mode: "heads_up", practice: true });
+  assert.equal((await a.next(m => m.type === "queued")).practice, true);
+  const seated = await a.next(m => m.type === "seated");
+  assert.equal(seated.ranked, false);
+  assert.equal(server.inRankedGame(a.wallet), false);
+  for (const c of [a, b]) {
+    c.socket.on("message", data => {
+      const m = JSON.parse(String(data)) as Msg;
+      if (m.type !== "table" || m.view.toAct !== c.wallet || !m.view.legal) return;
+      const legal = m.view.legal;
+      c.send({ type: "action", action: legal.canRaise ? { type: "raise", to: legal.maxRaiseTo } : legal.canCheck ? { type: "check" } : { type: "call" } });
+    });
+  }
+  const done = await a.next(m => m.type === "finished", 15_000);
+  assert.equal(done.ranked, false);
+  assert.equal(done.settled, false);
+  assert.equal(chain.matches.length, matchesBefore, "practice games never touch the chain");
+  for (const c of [a, b]) c.socket.close();
+});
+
+test("players at a ranked table are reported as in a ranked game", async () => {
+  const a = await client(["heads_up"]);
+  const b = await client(["heads_up"]);
+  await a.login();
+  await b.login();
+  a.send({ type: "queue", mode: "heads_up" });
+  b.send({ type: "queue", mode: "heads_up" });
+  assert.equal((await a.next(m => m.type === "seated")).ranked, true);
+  assert.equal(server.inRankedGame(a.wallet), true);
+  for (const c of [a, b]) c.socket.close();
+});

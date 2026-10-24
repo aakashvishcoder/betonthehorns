@@ -20,7 +20,7 @@ function choose(legal: Legal, stack: number, bigBlind: number) {
  * Connects like a real player: fake wallet, signed login, queue, then plays every turn.
  * Resolves with the "finished" message when its game ends.
  */
-export function runBot(url: string, mode: Mode, thinkMs = 700) {
+export function runBot(url: string, mode: Mode, thinkMs = 700, practice = false) {
   const wallet = fakeWallet();
   const finished = new Promise<{ places: Record<string, number> }>((resolve, reject) => {
     const socket = new WebSocket(url);
@@ -28,7 +28,7 @@ export function runBot(url: string, mode: Mode, thinkMs = 700) {
     socket.on("message", data => {
       const m = JSON.parse(String(data));
       if (m.type === "challenge") socket.send(JSON.stringify({ type: "login", wallet: wallet.address, signature: wallet.signLogin(m.nonce) }));
-      if (m.type === "welcome") socket.send(JSON.stringify({ type: "queue", mode }));
+      if (m.type === "welcome") socket.send(JSON.stringify({ type: "queue", mode, practice }));
       if (m.type === "table" && m.view.toAct === wallet.address && m.view.legal) {
         const me = m.view.seats.find((s: { id: string }) => s.id === wallet.address);
         const action = choose(m.view.legal, me.stack, m.view.blinds[1]);
