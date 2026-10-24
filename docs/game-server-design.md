@@ -69,3 +69,28 @@ When one player holds all the chips, the server calls `settle_match` with the fi
 5. On-chain hooks: rating lookup, `create_match`, `settle_match`.
 6. End-to-end test: scripted bot players queue, play a full Sit & Go on devnet, and get settled.
 7. Later, on your go-ahead: connect the website's table page.
+
+## Running it (built 2026-10-24)
+
+Everything lives in `server/` (Node 24, no build step). It is not connected to the website.
+
+```bash
+cd server
+npm install
+npm test              # engine, matchmaker and socket tests (in-memory chain)
+npm run test:devnet   # two bots play a real game settled on devnet (~0.03 devnet SOL)
+npm start             # game server on ws://localhost:8787 against devnet
+```
+
+`npm start` signs as the game server with `~/.config/solana/horns-elo-server.json`. Override with `PORT`, `SOLANA_RPC` and `SERVER_KEYPAIR`.
+
+| File | What it does |
+| --- | --- |
+| `src/cards.ts` | Seeded fair shuffle |
+| `src/evaluate.ts` | Hand ranking |
+| `src/game.ts` | Sit & Go rules engine |
+| `src/matchmaker.ts` | Ranked queues with widening Elo range |
+| `src/table.ts` | Real-time table: timers, time bank, disconnects |
+| `src/auth.ts` | Wallet sign-in |
+| `src/server.ts` | WebSocket protocol (message list at the top of the file) |
+| `src/solana-chain.ts` | Calls to the horns_elo program |

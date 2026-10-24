@@ -6,7 +6,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test \"src/**/*.test.ts\"",
+    "start": "node src/main.ts",
+    "test": "node --test --test-timeout=60000 \"src/**/*.test.ts\"",
+    "test:devnet": "node --test src/devnet.e2e.ts",
     "check": "tsc"
   },
   "devDependencies": {
