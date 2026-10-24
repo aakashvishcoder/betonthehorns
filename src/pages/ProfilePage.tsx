@@ -1,13 +1,6 @@
 import { useMemo, useState } from "react";
-import {
-  ArrowUpRight,
-  Clock3,
-  Coins,
-  Crown,
-  Trophy,
-  UsersRound,
-} from "lucide-react";
-import { Link } from "wouter";
+import { ArrowUpRight, Trophy } from "lucide-react";
+import { Link, Redirect, useRoute } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
 import {
   Avatar,
@@ -24,240 +17,184 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAuth } from "@/lib/auth";
+import { gameModes, type GameModeId } from "@/lib/game-modes";
 import {
-  formatChips,
+  demoPlayerFromAddress,
+  playerMilestones,
   sampleGames,
-  samplePlayer,
   type SampleGame,
 } from "@/lib/poker-design";
+import { shortAddress } from "@/lib/utils";
 import "@/styles/profile.css";
 
-type HistoryFilter = "all" | "win" | "loss";
-
-const filters: { id: HistoryFilter; label: string }[] = [
-  { id: "all", label: "All hands" },
-  { id: "win", label: "Wins" },
-  { id: "loss", label: "Losses" },
-];
-
-function signedChips(value: number) {
-  return `${value > 0 ? "+" : "−"}${formatChips(Math.abs(value))}`;
-}
-
 export default function ProfilePage() {
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [, params] = useRoute<{ address: string }>("/profile/:address");
+  const { isAuthenticated, address: myAddress } = useAuth();
   const [selectedGame, setSelectedGame] = useState<SampleGame | null>(null);
-
-  const metrics = useMemo(() => {
-    const recentNet = sampleGames.reduce(
-      (total, game) => total + game.chipChange,
-      0,
+  const lookedUp = params?.address ?? myAddress ?? "demo";
+  const player = demoPlayerFromAddress(lookedUp);
+  const mine = myAddress === player.address;
+  const milestones = useMemo(() => playerMilestones(player), [player]);
+  const totals = useMemo(() => {
+    return gameModes.reduce(
+      (sum, mode) => {
+        const stats = player.modes[mode.id];
+        return {
+          games: sum.games + stats.games,
+          wins: sum.wins + stats.wins,
+          handsWon: sum.handsWon + stats.handsWon,
+          handsFolded: sum.handsFolded + stats.handsFolded,
+        };
+      },
+      { games: 0, wins: 0, handsWon: 0, handsFolded: 0 },
     );
-    const winRate = Math.round((samplePlayer.wins / samplePlayer.games) * 100);
-    return { recentNet, winRate };
-  }, []);
+  }, [player]);
 
-  const filteredGames = useMemo(
-    () =>
-      sampleGames.filter(
-        (game) =>
-          historyFilter === "all" ||
-          game.result.toLowerCase() === historyFilter,
-      ),
-    [historyFilter],
-  );
+  if (!params?.address) {
+    if (isAuthenticated && myAddress) {
+      return <Redirect to={`/profile/${myAddress}`} />;
+    }
+    return <Redirect to="/leaderboard" />;
+  }
 
   return (
     <PokerAppShell section="profile">
       <div className="profile-page">
         <PageHeading
-          eyebrow="MY PROFILE"
-          title="Your poker story."
-          description="A quiet look back at the hands, tables, and company in this fictional club preview."
+          eyebrow={mine ? "YOUR WALLET · DEMO" : "PUBLIC PROFILE · DEMO"}
+          title={player.name}
+          description={`${shortAddress(player.address)} · Separate ELO, rank dNFTs, and milestones for Hands Up, SNG 4, and SNG 6.`}
           action={
             <Link href="/play" className="club-button">
-              Find a table <ArrowUpRight size={15} />
+              Queue a mode <ArrowUpRight size={15} />
             </Link>
           }
         />
 
-        <p className="profile-sample-notice" role="note">
-          <span aria-hidden="true">◆</span> Example profile and history only. No
-          live account, balances, or game records are shown here.
-        </p>
-
-        <section
-          className="profile-overview"
-          aria-label="Example player profile"
-        >
+        <section className="profile-overview" aria-label="Wallet identity">
           <Panel className="profile-identity-panel">
             <div className="profile-identity-topline">
-              <span>PLAYER CARD</span>
-              <Pill tone="violet">EXAMPLE</Pill>
+              <span>SOLANA WALLET</span>
+              <Pill tone={mine ? "maroon" : "violet"}>
+                {mine ? "You" : "Public"}
+              </Pill>
             </div>
             <div className="profile-identity">
-              <Avatar
-                name={samplePlayer.name}
-                size={62}
-                className="profile-avatar"
-              />
+              <Avatar name={player.name} size={62} className="profile-avatar" />
               <div>
                 <div className="profile-name-line">
-                  <h2>{samplePlayer.name}</h2>
-                  <Pill tone="maroon">{samplePlayer.title}</Pill>
+                  <h2>{player.name}</h2>
+                  <Pill tone="maroon">@{player.handle}</Pill>
                 </div>
-                <p className="profile-handle">@{samplePlayer.handle}</p>
-                <p className="profile-bio">{samplePlayer.bio}</p>
+                <p className="profile-handle">{player.address}</p>
+                <p className="profile-bio">
+                  Ranked Hold’em on Solana. ELO is escrowed per game. Rank
+                  dNFTs mint when this wallet crosses a new tier.
+                </p>
               </div>
-            </div>
-            <div className="profile-member-note">
-              <span>CLUB MEMBER SINCE</span>
-              <strong>{samplePlayer.joined}</strong>
             </div>
           </Panel>
 
           <Panel className="profile-featured-panel">
             <div className="profile-panel-kicker">
-              <Crown size={14} /> FEATURED HAND
+              <Trophy size={14} /> FEATURED HAND
             </div>
             <div className="profile-featured-content">
               <div>
-                <h2>High notes, low stakes.</h2>
-                <p>
-                  A shining example hand from the design fixture: straight on
-                  the river.
-                </p>
-                <Pill tone="maroon">FICTIONAL HIGHLIGHT</Pill>
+                <h2>Straight on the river.</h2>
+                <p>Demo highlight from a Hands Up match.</p>
+                <Pill tone="maroon">DEMO</Pill>
               </div>
-              <div
-                className="profile-featured-cards"
-                aria-label="Ace of spades and king of hearts"
-              >
-                <DeckCard
-                  card="AS"
-                  width={110}
-                  foil
-                  label="Featured example ace of spades"
-                />
-                <DeckCard
-                  card="KH"
-                  width={110}
-                  foil
-                  label="Featured example king of hearts"
-                />
+              <div className="profile-featured-cards">
+                <DeckCard card="AS" width={110} foil label="Ace of spades" />
+                <DeckCard card="KH" width={110} foil label="King of hearts" />
               </div>
             </div>
           </Panel>
         </section>
 
-        <section
-          className="profile-stats"
-          aria-label="Example poker statistics"
-        >
+        <section className="profile-stats" aria-label="Career totals">
+          <StatTile label="Games" value={totals.games} note="All modes" />
           <StatTile
-            label="Games played"
-            value={samplePlayer.games}
-            note="Example total"
-            tone="neutral"
-          />
-          <StatTile
-            label="Win rate"
-            value={`${metrics.winRate}%`}
-            note={`${samplePlayer.wins} example wins`}
+            label="Wins"
+            value={totals.wins}
+            note="Across ranked tables"
             tone="violet"
           />
           <StatTile
-            label="Play chips"
-            value={formatChips(samplePlayer.chips)}
-            note="For the good times"
-            tone="neutral"
+            label="Hands won"
+            value={totals.handsWon}
+            note="Milestone track"
           />
           <StatTile
-            label="Recent net"
-            value={signedChips(metrics.recentNet)}
-            note="Last 6 example games"
+            label="Hands folded"
+            value={totals.handsFolded}
+            note="Milestone track"
             tone="maroon"
           />
         </section>
 
-        <section
-          className="profile-history"
-          aria-labelledby="past-games-heading"
-        >
+        <section className="profile-modes" aria-label="ELO by mode">
+          {gameModes.map((mode) => {
+            const stats = player.modes[mode.id as GameModeId];
+            return (
+              <Panel key={mode.id} className="profile-mode-card">
+                <span>{mode.label}</span>
+                <strong>{stats.elo}</strong>
+                <small>
+                  {stats.rank} dNFT · {stats.games} games
+                </small>
+              </Panel>
+            );
+          })}
+        </section>
+
+        <section className="profile-highlights" aria-label="dNFT milestones">
+          {milestones.map((item) => (
+            <Panel key={item.id} className="profile-highlight">
+              <Trophy size={17} />
+              <div>
+                <span>{item.earned ? "MINTED" : "LOCKED"}</span>
+                <strong>{item.label}</strong>
+                <small>{item.detail}</small>
+              </div>
+            </Panel>
+          ))}
+        </section>
+
+        <section className="profile-history" aria-labelledby="past-games-heading">
           <div className="profile-history-heading">
             <div>
-              <span className="club-section-heading">PAST GAMES</span>
-              <h2 id="past-games-heading">The hands we remember.</h2>
-              <p className="club-muted">
-                Six fictional sessions from Jamie’s design-preview history.
-              </p>
-            </div>
-            <div
-              className="club-segmented profile-history-filters"
-              aria-label="Filter example past games"
-            >
-              {filters.map((filter) => (
-                <button
-                  key={filter.id}
-                  type="button"
-                  aria-pressed={historyFilter === filter.id}
-                  onClick={() => setHistoryFilter(filter.id)}
-                >
-                  {filter.label}
-                </button>
-              ))}
+              <span className="club-section-heading">RECENT MATCHES</span>
+              <h2 id="past-games-heading">Demo results.</h2>
             </div>
           </div>
-
           <Panel className="profile-history-panel">
             <div className="club-table-scroll">
               <table className="club-table club-table--stack profile-history-table">
-                <caption className="sr-only">Example past poker games</caption>
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Table &amp; hand</th>
-                    <th>Players</th>
+                    <th>Mode</th>
                     <th>Result</th>
-                    <th>Chip net</th>
-                    <th>Duration</th>
+                    <th>ELO</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredGames.map((game) => (
+                  {sampleGames.map((game) => (
                     <tr key={game.id}>
                       <td>
                         <time>{game.date}</time>
                       </td>
-                      <td className="club-cell-main">
+                      <td>
                         <button
                           type="button"
                           className="profile-game-link"
                           onClick={() => setSelectedGame(game)}
-                          aria-label={`View example details for ${game.table} on ${game.date}`}
                         >
-                          <span>{game.table}</span>
-                          <span
-                            className="profile-mini-hand"
-                            aria-label={`Example hand: ${game.bestHand}`}
-                          >
-                            {game.cards.map((card) => (
-                              <DeckCard
-                                key={card}
-                                card={card}
-                                width={28}
-                                foil={false}
-                                className="profile-card-thumb"
-                              />
-                            ))}
-                          </span>
+                          {gameModes.find((mode) => mode.id === game.mode)?.label}
                         </button>
-                      </td>
-                      <td>
-                        <span className="profile-players">
-                          <UsersRound size={14} />
-                          {game.players}
-                        </span>
                       </td>
                       <td>
                         <Pill tone={game.result === "Win" ? "violet" : "muted"}>
@@ -266,48 +203,18 @@ export default function ProfilePage() {
                       </td>
                       <td
                         className={
-                          game.chipChange > 0
+                          game.eloChange > 0
                             ? "profile-net profile-net--positive"
                             : "profile-net profile-net--negative"
                         }
                       >
-                        {signedChips(game.chipChange)}
-                      </td>
-                      <td>
-                        <span className="profile-duration">
-                          <Clock3 size={13} />
-                          {game.duration}
-                        </span>
+                        {game.eloChange > 0 ? "+" : ""}
+                        {game.eloChange}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-            {filteredGames.length === 0 && (
-              <div className="club-empty">
-                No fictional games match this filter.
-              </div>
-            )}
-          </Panel>
-        </section>
-
-        <section
-          className="profile-highlights"
-          aria-label="Example club highlights"
-        >
-          <Panel className="profile-highlight">
-            <Trophy size={17} />
-            <div>
-              <span>EXAMPLE NOTE</span>
-              <strong>Three wins in this six-game sample.</strong>
-            </div>
-          </Panel>
-          <Panel className="profile-highlight">
-            <Coins size={17} />
-            <div>
-              <span>EXAMPLE TABLE</span>
-              <strong>Friday Night Crew appears twice.</strong>
             </div>
           </Panel>
         </section>
@@ -320,11 +227,11 @@ export default function ProfilePage() {
         {selectedGame && (
           <DialogContent className="profile-game-dialog">
             <DialogHeader>
-              <span className="club-section-heading">EXAMPLE GAME DETAIL</span>
-              <DialogTitle>{selectedGame.table}</DialogTitle>
+              <DialogTitle>
+                {gameModes.find((mode) => mode.id === selectedGame.mode)?.label}
+              </DialogTitle>
               <DialogDescription>
-                Fictional preview data for {selectedGame.date}. This does not
-                represent a recorded game or real result.
+                Demo match on {selectedGame.date}. ELO escrow is not live.
               </DialogDescription>
             </DialogHeader>
             <div className="profile-dialog-detail">
@@ -333,28 +240,18 @@ export default function ProfilePage() {
                 <strong>{selectedGame.bestHand}</strong>
               </div>
               <div>
-                <span>Table</span>
-                <strong>
-                  {selectedGame.players} players · {selectedGame.duration}
-                </strong>
+                <span>Seats</span>
+                <strong>{selectedGame.players}</strong>
               </div>
               <div>
-                <span>Chip net</span>
-                <strong
-                  className={
-                    selectedGame.chipChange > 0
-                      ? "profile-net--positive"
-                      : "profile-net--negative"
-                  }
-                >
-                  {signedChips(selectedGame.chipChange)} play chips
+                <span>ELO</span>
+                <strong>
+                  {selectedGame.eloChange > 0 ? "+" : ""}
+                  {selectedGame.eloChange}
                 </strong>
               </div>
             </div>
-            <div
-              className="profile-dialog-cards"
-              aria-label={`Example ${selectedGame.bestHand} cards`}
-            >
+            <div className="profile-dialog-cards">
               {selectedGame.cards.map((card) => (
                 <DeckCard key={card} card={card} width={58} foil={false} />
               ))}

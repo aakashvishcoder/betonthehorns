@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
@@ -6,12 +6,20 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "next-themes";
 import { PokerMotionProvider } from "@/components/poker-app/PokerAppShell";
+import RequireAuth from "@/components/auth/RequireAuth";
+import { AuthProvider } from "@/lib/auth";
+import { isGameModeId } from "@/lib/game-modes";
 import Home from "./pages/Home";
 
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const PlayPage = lazy(() => import("./pages/PlayPage"));
+const QueuePage = lazy(() => import("./pages/QueuePage"));
 const TablePage = lazy(() => import("./pages/TablePage"));
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
+
+function Protected({ children }: { children: ReactNode }) {
+  return <RequireAuth>{children}</RequireAuth>;
+}
 
 export default function App() {
   return (
@@ -20,37 +28,57 @@ export default function App() {
         attribute="class"
         defaultTheme="dark"
         enableSystem={false}
-        storageKey="allin-violet-theme"
+        storageKey="betonthehorns-theme"
       >
         <TooltipProvider>
-          <PokerMotionProvider>
-            <Toaster />
-            <Suspense
-              fallback={
-                <div className="club-loading" role="status">
-                  Dealing the next page…
-                </div>
-              }
-            >
-              <Switch>
-                <Route path="/" component={Home} />
-                <Route path="/profile">
-                  <ProfilePage />
-                </Route>
-                <Route path="/play">
-                  <PlayPage />
-                </Route>
-                <Route path="/table">
-                  <TablePage />
-                </Route>
-                <Route path="/leaderboard">
-                  <LeaderboardPage />
-                </Route>
-                <Route path="/404" component={NotFound} />
-                <Route component={NotFound} />
-              </Switch>
-            </Suspense>
-          </PokerMotionProvider>
+          <AuthProvider>
+            <PokerMotionProvider>
+              <Toaster />
+              <Suspense
+                fallback={
+                  <div className="club-loading" role="status">
+                    Dealing the next page…
+                  </div>
+                }
+              >
+                <Switch>
+                  <Route path="/" component={Home} />
+                  <Route path="/profile/:address">
+                    <ProfilePage />
+                  </Route>
+                  <Route path="/profile">
+                    <ProfilePage />
+                  </Route>
+                  <Route path="/leaderboard">
+                    <LeaderboardPage />
+                  </Route>
+                  <Route path="/play">
+                    <Protected>
+                      <PlayPage />
+                    </Protected>
+                  </Route>
+                  <Route path="/queue/:mode">
+                    {(params) =>
+                      params.mode && isGameModeId(params.mode) ? (
+                        <Protected>
+                          <QueuePage />
+                        </Protected>
+                      ) : (
+                        <NotFound />
+                      )
+                    }
+                  </Route>
+                  <Route path="/table">
+                    <Protected>
+                      <TablePage />
+                    </Protected>
+                  </Route>
+                  <Route path="/404" component={NotFound} />
+                  <Route component={NotFound} />
+                </Switch>
+              </Suspense>
+            </PokerMotionProvider>
+          </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

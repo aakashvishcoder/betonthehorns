@@ -397,6 +397,34 @@
     grid-template-columns: 1fr;
   }
 }
+.profile-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+.profile-mode-card {
+  padding: 18px;
+}
+.profile-mode-card span,
+.profile-highlight small {
+  display: block;
+  color: #a79aae;
+  font-size: 12px;
+}
+.profile-mode-card strong {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 28px;
+}
+.profile-handle {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 800px) {
+  .profile-modes {
+    grid-template-columns: 1fr;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .profile-page * {
     transition-duration: 0ms !important;

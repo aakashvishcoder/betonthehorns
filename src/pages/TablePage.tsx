@@ -1,9 +1,17 @@
-import { type CSSProperties, type FormEvent, useState } from "react";
+import { type CSSProperties, type FormEvent, useMemo, useState } from "react";
 import { ArrowLeft, Eye, EyeOff, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
 import { Avatar, DeckCard } from "@/components/poker-app/PokerUI";
-import { formatChips, sampleTables, type DeckCode } from "@/lib/poker-design";
+import { useAuth } from "@/lib/auth";
+import { getGameMode, isGameModeId } from "@/lib/game-modes";
+import {
+  demoPlayers,
+  demoPlayerFromAddress,
+  formatChips,
+  type DeckCode,
+} from "@/lib/poker-design";
+import { shortAddress } from "@/lib/utils";
 import "@/styles/table.css";
 
 type Seat = {
@@ -16,19 +24,22 @@ type Seat = {
   me?: boolean;
 } | null;
 
-// Nine seats clockwise from the bottom centre, like PokerNow. null = open seat.
-const seats: readonly Seat[] = [
-  { name: "Jamie", stack: 2450, tone: "violet", me: true },
-  { name: "Casey", stack: 1410, tone: "neutral", folded: true, last: "Fold" },
-  { name: "Sam", stack: 2240, tone: "maroon", last: "Check" },
-  null,
-  { name: "Alex", stack: 1740, tone: "neutral", bet: 40, last: "Bet" },
-  null,
-  { name: "River", stack: 980, tone: "violet", folded: true, last: "Fold" },
-  { name: "Jo", stack: 1610, tone: "maroon", bet: 40, last: "Call" },
-  null,
-];
-const dealerSeat = 1;
+const tones = ["violet", "maroon", "neutral"] as const;
+
+function seatsForMode(seatCount: number, youName: string): Seat[] {
+  const opponents = demoPlayers.slice(0, seatCount - 1);
+  return [
+    { name: youName, stack: 2450, tone: "violet", me: true },
+    ...opponents.map((player, index) => ({
+      name: player.name,
+      stack: 980 + index * 220,
+      tone: tones[(index + 1) % tones.length],
+      last: index === 0 ? "Fold" : index === 1 ? "Call" : "Check",
+      folded: index === 0,
+      bet: index === 1 ? 40 : undefined,
+    })),
+  ];
+}
 const flop: DeckCode[] = ["QC", "JC", "TC"];
 const potBeforeStreet = 240;
 const toCall = 40;
@@ -40,8 +51,8 @@ const chipDenominations = [
   { value: 500, variant: "" },
 ] as const;
 
-function seatPosition(index: number) {
-  const angle = ((90 + index * (360 / seats.length)) * Math.PI) / 180;
+function seatPosition(index: number, count: number) {
+  const angle = ((90 + index * (360 / count)) * Math.PI) / 180;
   return {
     "--cos": Math.cos(angle),
     "--sin": Math.sin(angle),
@@ -65,11 +76,19 @@ function Chip({
 }
 
 export default function TablePage() {
-  const roomId =
-    new URLSearchParams(window.location.search).get("room") ?? "friday";
-  const room =
-    sampleTables.find((table) => table.id === roomId) ?? sampleTables[0]!;
+  const { address, displayAddress } = useAuth();
+  const requested =
+    new URLSearchParams(window.location.search).get("mode") ?? "hands-up";
+  const mode = getGameMode(isGameModeId(requested) ? requested : "hands-up");
+  const you = address
+    ? demoPlayerFromAddress(address)
+    : { name: displayAddress ?? "You" };
+  const seats = useMemo(
+    () => seatsForMode(mode.seats, you.name || shortAddress(address ?? "You")),
+    [mode.seats, you.name, address],
+  );
   const me = seats[0]!;
+  const dealerSeat = 1;
   const totalPot =
     potBeforeStreet + seats.reduce((sum, seat) => sum + (seat?.bet ?? 0), 0);
   const minRaise = toCall * 2;
@@ -117,13 +136,13 @@ export default function TablePage() {
     <PokerAppShell section="table">
       <section className="felt-room" aria-labelledby="felt-room-title">
         <header className="felt-topbar">
-          <Link href="/play" className="club-button club-button--ghost">
-            <ArrowLeft size={15} /> Lobby
+          <Link href={`/queue/${mode.id}`} className="club-button club-button--ghost">
+            <ArrowLeft size={15} /> Queue
           </Link>
           <div className="felt-room-name">
-            <h1 id="felt-room-title">{room.name}</h1>
+            <h1 id="felt-room-title">{mode.label}</h1>
             <span>
-              NLH · Blinds {room.blinds} · {room.category}
+              NLH · {mode.seats} seats · {mode.escrow} ELO escrowed · demo
             </span>
           </div>
           <div className="felt-topbar-actions">
@@ -150,7 +169,7 @@ export default function TablePage() {
         <div className="felt-stage-row">
           <div
             className="felt-stage"
-            aria-label="Poker table: nine seats, six players, flop dealt"
+            aria-label={`${mode.label} table, flop dealt`}
           >
             <div className="felt-oval" aria-hidden="true" />
 
@@ -180,7 +199,7 @@ export default function TablePage() {
             </div>
 
             {seats.map((seat, index) => {
-              const style = seatPosition(index);
+              const style = seatPosition(index, seats.length);
               if (!seat)
                 return (
                   <button
@@ -398,7 +417,7 @@ export default function TablePage() {
             )}
             <p aria-live="polite">
               {myAction
-                ? `You: ${myAction} · preview only, no live game`
+                ? `You: ${myAction} · demo table, ELO escrow not live`
                 : `Your turn · ${toCall} to call`}
             </p>
           </div>

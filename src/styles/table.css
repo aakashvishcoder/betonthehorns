@@ -76,7 +76,7 @@
     0 22px 50px #000a;
 }
 .felt-oval::after {
-  content: "ALL IN";
+  content: "HORNS";
   position: absolute;
   left: 50%;
   bottom: 14%;

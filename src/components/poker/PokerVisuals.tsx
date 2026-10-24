@@ -12,13 +12,13 @@ export function Brand({
     <a
       href={href}
       className={`brand ${light ? "brand-light" : ""}`}
-      aria-label="ALL IN home"
+      aria-label="betonthehorns home"
     >
       <span className="brand-mark" aria-hidden="true">
         ♠<i>◆</i>
       </span>
       <span>
-        ALL IN<span className="brand-dot">.</span>
+        betonthehorns<span className="brand-dot">.</span>
       </span>
     </a>
   );
@@ -98,31 +98,31 @@ export function TablePreview() {
       <div className="preview-topline">
         <span>
           <i className="status-dot" />
-          FRIDAY NIGHT CREW
+          HANDS UP · DEMO
         </span>
-        <span>JUST-FOR-FUN DEMO</span>
+        <span>ELO ESCROW LIVE</span>
       </div>
       <div className="mini-table">
         <div className="player-seat seat-top">
           <span className="player-avatar peach">J</span>
           <span>
-            Jamie<small>2,450 chips</small>
+            You<small>1,482 ELO</small>
           </span>
         </div>
         <div className="player-seat seat-left">
           <span className="player-avatar lavender">S</span>
           <span>
-            Sam<small>1,850 chips</small>
+            Sam<small>1,426 ELO</small>
           </span>
         </div>
         <div className="player-seat seat-right">
           <span className="player-avatar sand">A</span>
           <span>
-            Alex<small>3,200 chips</small>
+            Alex<small>1,864 ELO</small>
           </span>
         </div>
         <div className="table-oval">
-          <div className="table-wordmark">ALL IN.</div>
+          <div className="table-wordmark">HORNS</div>
           <div className="community-cards">
             <PlayingCard rank="K" suit="♠" />
             <PlayingCard rank="Q" suit="♠" />
