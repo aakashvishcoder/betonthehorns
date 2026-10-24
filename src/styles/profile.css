@@ -350,7 +350,6 @@
     flex-basis: 145px;
     transform: scale(0.82);
     transform-origin: top right;
-    margin-right: -23px;
     margin-bottom: -20px;
   }
   .profile-history-panel {
@@ -377,6 +376,16 @@
   .profile-identity-panel,
   .profile-featured-panel {
     padding: 18px;
+  }
+  .profile-featured-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .profile-featured-cards {
+    flex-basis: auto;
+    align-self: center;
+    transform: none;
+    margin: 0 0 10px;
   }
   .profile-featured-content h2 {
     font-size: 20px;

@@ -1,333 +1,407 @@
-import { type FormEvent, useState } from "react";
-import { ArrowLeft, Eye, EyeOff, Leaf, MessageCircle } from "lucide-react";
+import { type CSSProperties, type FormEvent, useState } from "react";
+import { ArrowLeft, Eye, EyeOff, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
-import {
-  Avatar,
-  DeckCard,
-  PageHeading,
-  Panel,
-  Pill,
-} from "@/components/poker-app/PokerUI";
-import { sampleTables, type DeckCode } from "@/lib/poker-design";
+import { Avatar, DeckCard } from "@/components/poker-app/PokerUI";
+import { formatChips, sampleTables, type DeckCode } from "@/lib/poker-design";
 import "@/styles/table.css";
-
-type Action = "fold" | "check" | "raise" | null;
 
 type Seat = {
   name: string;
-  chips: string;
-  position: string;
+  stack: number;
   tone: "violet" | "maroon" | "neutral";
-  current?: boolean;
-};
+  bet?: number;
+  last?: string;
+  folded?: boolean;
+  me?: boolean;
+} | null;
 
+// Nine seats clockwise from the bottom centre, like PokerNow. null = open seat.
 const seats: readonly Seat[] = [
-  { name: "Alex", chips: "1,780", position: "top", tone: "neutral" },
-  { name: "Sam", chips: "2,240", position: "upper-left", tone: "maroon" },
-  { name: "River", chips: "980", position: "upper-right", tone: "violet" },
-  { name: "Casey", chips: "1,410", position: "lower-left", tone: "neutral" },
-  { name: "Jo", chips: "1,650", position: "lower-right", tone: "maroon" },
-  {
-    name: "Jamie",
-    chips: "2,450",
-    position: "you",
-    tone: "violet",
-    current: true,
-  },
+  { name: "Jamie", stack: 2450, tone: "violet", me: true },
+  { name: "Casey", stack: 1410, tone: "neutral", folded: true, last: "Fold" },
+  { name: "Sam", stack: 2240, tone: "maroon", last: "Check" },
+  null,
+  { name: "Alex", stack: 1740, tone: "neutral", bet: 40, last: "Bet" },
+  null,
+  { name: "River", stack: 980, tone: "violet", folded: true, last: "Fold" },
+  { name: "Jo", stack: 1610, tone: "maroon", bet: 40, last: "Call" },
+  null,
+];
+const dealerSeat = 1;
+const flop: DeckCode[] = ["QC", "JC", "TC"];
+const potBeforeStreet = 240;
+const toCall = 40;
+
+// Same three chip styles as the landing page (.poker-chip in index.css).
+const chipDenominations = [
+  { value: 25, variant: "chip-ivory" },
+  { value: 100, variant: "chip-red" },
+  { value: 500, variant: "" },
 ] as const;
 
-const flop: DeckCode[] = ["QC", "JC", "TC"];
+function seatPosition(index: number) {
+  const angle = ((90 + index * (360 / seats.length)) * Math.PI) / 180;
+  return {
+    "--cos": Math.cos(angle),
+    "--sin": Math.sin(angle),
+  } as CSSProperties;
+}
+
+function Chip({
+  label,
+  variant = "",
+  className = "",
+}: {
+  label?: string;
+  variant?: string;
+  className?: string;
+}) {
+  return (
+    <span className={`poker-chip ${variant} ${className}`} aria-hidden="true">
+      <span className="chip-rim">{label && <span>{label}</span>}</span>
+    </span>
+  );
+}
 
 export default function TablePage() {
   const roomId =
     new URLSearchParams(window.location.search).get("room") ?? "friday";
   const room =
-    sampleTables.find(table => table.id === roomId) ?? sampleTables[0]!;
-  const [action, setAction] = useState<Action>(null);
-  const [raiseAmount, setRaiseAmount] = useState(80);
+    sampleTables.find((table) => table.id === roomId) ?? sampleTables[0]!;
+  const me = seats[0]!;
+  const totalPot =
+    potBeforeStreet + seats.reduce((sum, seat) => sum + (seat?.bet ?? 0), 0);
+  const minRaise = toCall * 2;
+
+  const [raising, setRaising] = useState(false);
+  const [raiseTo, setRaiseTo] = useState(minRaise);
+  const [myAction, setMyAction] = useState<string | null>(null);
   const [hideCards, setHideCards] = useState(false);
+  const [showChat, setShowChat] = useState(true);
   const [draftMessage, setDraftMessage] = useState("");
   const [messages, setMessages] = useState([
     { name: "Sam", text: "one more hand?" },
     { name: "River", text: "That flop has opinions." },
   ]);
 
-  const previewText = action
-    ? `Preview action: ${action === "raise" ? `Raise ${raiseAmount} play chips` : action[0].toUpperCase() + action.slice(1)} — no live game.`
-    : "Preview action: choose Fold, Check, or Raise — no live game.";
+  const clampRaise = (value: number) =>
+    Math.min(me.stack, Math.max(minRaise, Math.round(value)));
+  const presets = [
+    { label: "Min", value: minRaise },
+    { label: "½ Pot", value: totalPot / 2 },
+    { label: "¾ Pot", value: (totalPot * 3) / 4 },
+    { label: "Pot", value: totalPot },
+    { label: "All in", value: me.stack },
+  ];
+
+  function act(label: string) {
+    setMyAction(label);
+    setRaising(false);
+  }
+
+  function addChip(value: number) {
+    setRaiseTo((current) => clampRaise((raising ? current : 0) + value));
+    setRaising(true);
+  }
 
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draftMessage.trim();
     if (!text) return;
-    setMessages(current => [...current, { name: "Jamie", text }]);
+    setMessages((current) => [...current, { name: me.name, text }]);
     setDraftMessage("");
   }
 
   return (
     <PokerAppShell section="table">
-      <section className="table-page" aria-labelledby="table-room-title">
-        <PageHeading
-          eyebrow="TABLE ROOM · SAMPLE HAND"
-          title={<span id="table-room-title">{room.name}</span>}
-          description={
-            <>
-              {room.description} A static six-seat hand for the design preview.
-            </>
-          }
-          action={
-            <Link
-              href="/play"
-              className="club-button club-button--ghost table-back-link"
+      <section className="felt-room" aria-labelledby="felt-room-title">
+        <header className="felt-topbar">
+          <Link href="/play" className="club-button club-button--ghost">
+            <ArrowLeft size={15} /> Lobby
+          </Link>
+          <div className="felt-room-name">
+            <h1 id="felt-room-title">{room.name}</h1>
+            <span>
+              NLH · Blinds {room.blinds} · {room.category}
+            </span>
+          </div>
+          <div className="felt-topbar-actions">
+            <button
+              type="button"
+              className="club-button club-button--secondary"
+              onClick={() => setHideCards((hidden) => !hidden)}
+              aria-pressed={hideCards}
             >
-              <ArrowLeft size={15} /> Back to tables
-            </Link>
-          }
-        />
+              {hideCards ? <Eye size={15} /> : <EyeOff size={15} />}
+              {hideCards ? "Show cards" : "Hide cards"}
+            </button>
+            <button
+              type="button"
+              className="club-button club-button--secondary"
+              onClick={() => setShowChat((shown) => !shown)}
+              aria-pressed={showChat}
+            >
+              <MessageCircle size={15} /> Chat
+            </button>
+          </div>
+        </header>
 
-        <div className="table-layout">
-          <div className="table-primary">
-            <Panel className="tabletop-panel">
-              <div className="tabletop-header">
-                <div>
-                  <span className="club-muted">SIX SEAT SAMPLE TABLE</span>
-                  <h2 className="club-section-heading">
-                    Friendly stakes, polished view.
-                  </h2>
-                </div>
-                <div className="tabletop-controls">
-                  <span className="table-design-leaf">
-                    <Leaf size={13} /> DESIGN ONLY
-                  </span>
+        <div className="felt-stage-row">
+          <div
+            className="felt-stage"
+            aria-label="Poker table: nine seats, six players, flop dealt"
+          >
+            <div className="felt-oval" aria-hidden="true" />
+
+            <div className="felt-center">
+              <div className="felt-pot">
+                <span>
+                  Pot <strong>{formatChips(potBeforeStreet)}</strong>
+                </span>
+                <small>Total {formatChips(totalPot)}</small>
+              </div>
+              <div
+                className="felt-board"
+                aria-label="Flop: queen, jack and ten of clubs. Turn and river not dealt."
+              >
+                {flop.map((card) => (
+                  <DeckCard
+                    key={card}
+                    card={card}
+                    width={64}
+                    foil={true}
+                    interactive={false}
+                  />
+                ))}
+                <span className="felt-board-slot" aria-hidden="true" />
+                <span className="felt-board-slot" aria-hidden="true" />
+              </div>
+            </div>
+
+            {seats.map((seat, index) => {
+              const style = seatPosition(index);
+              if (!seat)
+                return (
                   <button
                     type="button"
-                    className="club-button club-button--secondary table-card-toggle"
-                    onClick={() => setHideCards(hidden => !hidden)}
-                    aria-pressed={hideCards}
+                    key={index}
+                    className="felt-seat felt-seat--open"
+                    style={style}
                   >
-                    {hideCards ? <Eye size={15} /> : <EyeOff size={15} />}
-                    {hideCards ? "Show own cards" : "Hide own cards"}
+                    Sit here
+                  </button>
+                );
+              const label = seat.me ? myAction : seat.last;
+              const folded = seat.folded || (seat.me && myAction === "Fold");
+              return (
+                <div key={seat.name}>
+                  <div
+                    className={`felt-seat ${seat.me ? "is-me is-acting" : ""} ${folded ? "is-folded" : ""}`}
+                    style={style}
+                  >
+                    {!folded && (
+                      <div className="felt-seat-cards">
+                        {seat.me && !hideCards ? (
+                          <>
+                            <DeckCard card="AS" width={40} />
+                            <DeckCard card="KH" width={40} />
+                          </>
+                        ) : (
+                          <>
+                            <DeckCard card="BACK" width={40} />
+                            <DeckCard card="BACK" width={40} />
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <div className="felt-seat-box">
+                      <Avatar name={seat.name} size={30} tone={seat.tone} />
+                      <div>
+                        <strong>{seat.name}</strong>
+                        <span>{formatChips(seat.stack)}</span>
+                      </div>
+                      {label && <em className="felt-seat-tag">{label}</em>}
+                    </div>
+                    {seat.me && !myAction && (
+                      <i className="felt-timer" aria-hidden="true" />
+                    )}
+                  </div>
+                  {seat.bet && (
+                    <div className="felt-bet" style={style}>
+                      <Chip className="felt-chip-mini" />
+                      {formatChips(seat.bet)}
+                    </div>
+                  )}
+                  {index === dealerSeat && (
+                    <span
+                      className="felt-dealer"
+                      style={style}
+                      aria-label={`${seat.name} is the dealer`}
+                    >
+                      D
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <aside className="felt-chip-rail" aria-label="Chip tray">
+            <span className="felt-rail-label">Your stack</span>
+            <strong className="felt-rail-stack">{formatChips(me.stack)}</strong>
+            {chipDenominations.map(({ value, variant }) => (
+              <button
+                type="button"
+                key={value}
+                className="felt-rail-chip"
+                onClick={() => addChip(value)}
+                aria-label={`Add ${value} to your raise`}
+              >
+                <Chip label={String(value)} variant={variant} />
+              </button>
+            ))}
+            <button
+              type="button"
+              className="felt-rail-clear"
+              onClick={() => setRaiseTo(minRaise)}
+            >
+              Clear
+            </button>
+          </aside>
+        </div>
+
+        <div
+          className={`felt-bottom ${showChat ? "" : "felt-bottom--no-chat"}`}
+        >
+          <div className="felt-my-hand">
+            <div className="felt-my-cards">
+              <DeckCard
+                card="AS"
+                width={76}
+                foil={true}
+                faceDown={hideCards}
+                interactive={true}
+                label="Your ace of spades"
+              />
+              <DeckCard
+                card="KH"
+                width={76}
+                foil={true}
+                faceDown={hideCards}
+                interactive={true}
+                label="Your king of hearts"
+              />
+            </div>
+            <span>{hideCards ? "Cards hidden" : "Straight, ace high"}</span>
+          </div>
+
+          {showChat && (
+            <div className="felt-chat">
+              <ul>
+                {messages.map((message, index) => (
+                  <li key={`${message.name}-${index}`}>
+                    <strong>{message.name}</strong> {message.text}
+                  </li>
+                ))}
+              </ul>
+              <form onSubmit={submitMessage}>
+                <label htmlFor="felt-chat-input" className="sr-only">
+                  Chat message
+                </label>
+                <input
+                  id="felt-chat-input"
+                  value={draftMessage}
+                  onChange={(event) => setDraftMessage(event.target.value)}
+                  placeholder="Say something friendly"
+                />
+              </form>
+            </div>
+          )}
+
+          <div className="felt-actions" aria-label="Your action">
+            {raising ? (
+              <>
+                <div className="felt-presets">
+                  {presets.map((preset) => (
+                    <button
+                      type="button"
+                      key={preset.label}
+                      className="club-button club-button--secondary"
+                      onClick={() => setRaiseTo(clampRaise(preset.value))}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="felt-raise-row">
+                  <input
+                    type="range"
+                    min={minRaise}
+                    max={me.stack}
+                    step={10}
+                    value={raiseTo}
+                    onChange={(event) => setRaiseTo(Number(event.target.value))}
+                    aria-label="Raise to"
+                  />
+                  <input
+                    type="number"
+                    min={minRaise}
+                    max={me.stack}
+                    value={raiseTo}
+                    onChange={(event) => setRaiseTo(Number(event.target.value))}
+                    onBlur={() => setRaiseTo(clampRaise(raiseTo))}
+                    aria-label="Raise amount"
+                  />
+                </div>
+                <div className="felt-action-buttons">
+                  <button
+                    type="button"
+                    className="club-button club-button--ghost"
+                    onClick={() => setRaising(false)}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="club-button"
+                    onClick={() => act(`Raise ${formatChips(raiseTo)}`)}
+                  >
+                    Raise to {formatChips(raiseTo)}
                   </button>
                 </div>
-              </div>
-
-              <div
-                className="tabletop-scene"
-                aria-label="Static example poker table with six sample players"
-              >
-                <div className="table-oval" aria-hidden="true" />
-                {seats.map(seat => (
-                  <div
-                    className={`table-seat table-seat--${seat.position} ${seat.current ? "is-current" : ""}`}
-                    key={seat.name}
-                  >
-                    <Avatar name={seat.name} size={38} tone={seat.tone} />
-                    <div className="table-seat-card">
-                      <strong>
-                        {seat.name}
-                        {seat.current && <em>you</em>}
-                      </strong>
-                      <span>
-                        {seat.chips} <small>play chips</small>
-                      </span>
-                      {seat.current && <b>Your action</b>}
-                    </div>
-                  </div>
-                ))}
-
-                <div
-                  className="table-board"
-                  aria-label="Flop: queen, jack, and ten of clubs. Turn and river not revealed."
-                >
-                  {flop.map(card => (
-                    <DeckCard
-                      key={card}
-                      card={card}
-                      width={72}
-                      foil={true}
-                      faceDown={false}
-                      interactive={false}
-                      className="table-board-card"
-                      label={`Community card: ${card === "QC" ? "queen" : card === "JC" ? "jack" : "ten"} of clubs`}
-                    />
-                  ))}
-                  <DeckCard
-                    card="BACK"
-                    width={72}
-                    foil={false}
-                    faceDown={true}
-                    interactive={false}
-                    className="table-board-card"
-                    label="Turn not revealed"
-                  />
-                  <DeckCard
-                    card="BACK"
-                    width={72}
-                    foil={false}
-                    faceDown={true}
-                    interactive={false}
-                    className="table-board-card"
-                    label="River not revealed"
-                  />
-                </div>
-
-                <div className="table-pot">
-                  <span>Pot</span>
-                  <strong>320</strong>
-                  <small>play chips</small>
-                </div>
-                <div className="table-hand-label">
-                  {hideCards
-                    ? "Your hand · Cards hidden"
-                    : "Your hand · Broadway straight"}
-                </div>
-                <div className="table-player-cards">
-                  <DeckCard
-                    card="AS"
-                    width={70}
-                    foil={true}
-                    faceDown={hideCards}
-                    interactive={true}
-                    className="table-hole-card"
-                    label="Your Ace of spades — click or press Enter to flip"
-                  />
-                  <DeckCard
-                    card="KH"
-                    width={70}
-                    foil={true}
-                    faceDown={hideCards}
-                    interactive={true}
-                    className="table-hole-card"
-                    label="Your King of hearts — click or press Enter to flip"
-                  />
-                </div>
-              </div>
-
-              <div className="tabletop-footer">
-                <span>
-                  Round <strong>Flop</strong>
-                </span>
-                <span>
-                  Blinds <strong>10 / 20</strong>
-                </span>
-                <span className="club-muted">
-                  Cards are interactive design components.
-                </span>
-              </div>
-            </Panel>
-
-            <Panel className="table-actions-panel">
-              <div className="table-actions-copy">
-                <span className="club-muted">YOUR TURN · PREVIEW CONTROLS</span>
-                <p aria-live="polite">{previewText}</p>
-              </div>
-              <div className="table-actions" aria-label="Sample poker actions">
+              </>
+            ) : (
+              <div className="felt-action-buttons">
                 <button
                   type="button"
-                  className={`club-button club-button--ghost ${action === "fold" ? "is-selected" : ""}`}
-                  onClick={() => setAction("fold")}
-                  aria-pressed={action === "fold"}
+                  className="club-button club-button--ghost"
+                  onClick={() => act("Fold")}
                 >
                   Fold
                 </button>
                 <button
                   type="button"
-                  className={`club-button club-button--secondary ${action === "check" ? "is-selected" : ""}`}
-                  onClick={() => setAction("check")}
-                  aria-pressed={action === "check"}
+                  className="club-button club-button--secondary"
+                  onClick={() => act(`Call ${toCall}`)}
                 >
-                  Check
+                  Call {toCall}
                 </button>
                 <button
                   type="button"
-                  className={`club-button ${action === "raise" ? "is-selected" : ""}`}
-                  onClick={() => setAction("raise")}
-                  aria-pressed={action === "raise"}
+                  className="club-button"
+                  onClick={() => setRaising(true)}
                 >
                   Raise
                 </button>
               </div>
-              <div className="table-raise-control">
-                <label htmlFor="sample-raise">Sample raise amount</label>
-                <input
-                  id="sample-raise"
-                  type="range"
-                  min="40"
-                  max="240"
-                  step="20"
-                  value={raiseAmount}
-                  onChange={event => setRaiseAmount(Number(event.target.value))}
-                />
-                <output htmlFor="sample-raise">{raiseAmount} play chips</output>
-              </div>
-            </Panel>
+            )}
+            <p aria-live="polite">
+              {myAction
+                ? `You: ${myAction} · preview only, no live game`
+                : `Your turn · ${toCall} to call`}
+            </p>
           </div>
-
-          <aside
-            className="table-sidebar"
-            aria-label="Table notes and sample chat"
-          >
-            <Panel className="table-notes-panel">
-              <span className="club-muted">TABLE NOTES</span>
-              <h2 className="club-section-heading">A small, good crowd.</h2>
-              <dl>
-                <div>
-                  <dt>Room</dt>
-                  <dd>
-                    {room.category} · {room.pace}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Seats</dt>
-                  <dd>6 named sample players</dd>
-                </div>
-                <div>
-                  <dt>Cards</dt>
-                  <dd>Foil cards are visual only</dd>
-                </div>
-              </dl>
-              <Pill tone="maroon">Play chips, never real money</Pill>
-            </Panel>
-
-            <Panel className="table-chat-panel">
-              <div className="table-chat-heading">
-                <div>
-                  <span className="club-muted">TABLE CHAT</span>
-                  <h2 className="club-section-heading">Around the felt</h2>
-                </div>
-                <MessageCircle size={18} aria-hidden="true" />
-              </div>
-              <ul className="table-chat-list">
-                {messages.map((message, index) => (
-                  <li key={`${message.name}-${index}`}>
-                    <strong>{message.name}</strong>
-                    <span>{message.text}</span>
-                  </li>
-                ))}
-              </ul>
-              <form onSubmit={submitMessage} className="table-chat-form">
-                <label htmlFor="table-chat-input">
-                  Add a local sample message
-                </label>
-                <div>
-                  <input
-                    id="table-chat-input"
-                    value={draftMessage}
-                    onChange={event => setDraftMessage(event.target.value)}
-                    placeholder="Say something friendly"
-                  />
-                  <button
-                    type="submit"
-                    className="club-button club-button--secondary"
-                  >
-                    Add
-                  </button>
-                </div>
-                <p>This adds a local sample message only. Nothing is sent.</p>
-              </form>
-            </Panel>
-          </aside>
         </div>
       </section>
     </PokerAppShell>

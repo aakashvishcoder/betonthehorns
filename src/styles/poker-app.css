@@ -803,3 +803,39 @@
 .play-page .club-page-heading {
   margin-bottom: 0;
 }
+
+/* Phones: data tables marked --stack become one card per row instead of scrolling sideways. */
+@media (max-width: 620px) {
+  .club-table--stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .club-table.club-table--stack,
+  .club-table--stack tbody {
+    display: block;
+    min-width: 0;
+  }
+  .club-table--stack tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    padding: 14px 12px;
+    border-bottom: 1px solid #3b094934;
+  }
+  .club-table--stack tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .club-table.club-table--stack td {
+    height: auto;
+    padding: 0;
+    border-bottom: 0;
+  }
+  .club-table.club-table--stack td.club-cell-main {
+    order: -1;
+    flex-basis: 100%;
+  }
+}

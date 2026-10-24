@@ -448,8 +448,10 @@
     width: 100%;
   }
 
-  .play-table {
-    min-width: 710px;
+  /* Rows stack as cards here (club-table--stack); let the preview link wrap. */
+  .play-table td:last-child {
+    width: auto;
+    margin-left: auto;
   }
 }
 
