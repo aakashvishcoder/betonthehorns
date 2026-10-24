@@ -7,11 +7,11 @@ import {
   Check,
   ChevronDown,
   Menu,
-  Pause,
-  Play,
+  Wallet,
   X,
 } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
+import { toast } from "sonner";
 import { Brand, Chip, TablePreview } from "@/components/poker/PokerVisuals";
 import TableSetup from "@/components/poker/TableSetup";
 import SmoothScroll from "@/components/poker/SmoothScroll";
@@ -64,15 +64,19 @@ const faqs = [
   ],
 ];
 
+type EthereumProvider = {
+  request: (args: { method: string }) => Promise<string[]>;
+};
+
 export default function Home() {
   const [, navigate] = useLocation();
   const [setupOpen, setSetupOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
-  const [effectsPaused, setEffectsPaused] = useState(false);
+  const [wallet, setWallet] = useState<string | null>(null);
   const reducedMotion = useReducedMotion();
-  const motionPaused = effectsPaused || Boolean(reducedMotion) || setupOpen;
+  const motionPaused = Boolean(reducedMotion) || setupOpen;
   const enter = {
     initial: { opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 },
     whileInView: { opacity: 1, y: 0 },
@@ -80,6 +84,23 @@ export default function Home() {
     transition: { duration: reducedMotion ? 0 : 0.7 },
   };
   const start = () => setSetupOpen(true);
+
+  // ponytail: injected EIP-1193 wallet only (MetaMask etc.); add WalletConnect for mobile wallets if needed.
+  async function connectWallet() {
+    const ethereum = (window as { ethereum?: EthereumProvider }).ethereum;
+    if (!ethereum) {
+      toast.error("No wallet found. Install a browser wallet like MetaMask.");
+      return;
+    }
+    try {
+      const [account] = await ethereum.request({
+        method: "eth_requestAccounts",
+      });
+      if (account) setWallet(account);
+    } catch {
+      toast.error("Wallet connection was cancelled.");
+    }
+  }
 
   return (
     <div
@@ -96,42 +117,14 @@ export default function Home() {
           <a href="#faqs">FAQs</a>
         </nav>
         <div className="header-actions">
-          <button
-            type="button"
-            className="effects-motion-toggle"
-            aria-label={
-              reducedMotion
-                ? "Effects follow your reduced-motion setting"
-                : effectsPaused
-                  ? "Resume background effects"
-                  : "Pause background effects"
-            }
-            aria-pressed={effectsPaused || Boolean(reducedMotion)}
-            disabled={Boolean(reducedMotion)}
-            title={
-              reducedMotion
-                ? "Reduced motion is enabled on your device"
-                : effectsPaused
-                  ? "Resume background effects"
-                  : "Pause background effects"
-            }
-            onClick={() => setEffectsPaused(!effectsPaused)}
-          >
-            {effectsPaused || reducedMotion ? (
-              <Play size={14} />
+          <button className="nav-cta" onClick={connectWallet}>
+            {wallet ? (
+              `${wallet.slice(0, 6)}…${wallet.slice(-4)}`
             ) : (
-              <Pause size={14} />
+              <>
+                Connect wallet <Wallet size={16} />
+              </>
             )}
-            <span>
-              {reducedMotion
-                ? "Motion off"
-                : effectsPaused
-                  ? "Resume effects"
-                  : "Pause effects"}
-            </span>
-          </button>
-          <button className="nav-cta" onClick={() => navigate("/play")}>
-            Take a seat <ArrowUpRight size={16} />
           </button>
           <button
             className="mobile-menu-toggle"

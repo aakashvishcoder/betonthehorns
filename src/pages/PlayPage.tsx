@@ -30,7 +30,7 @@ const playModes: { label: PlayMode; note: string; count: number }[] = [
   { label: "Tournament", note: "A little more on the line.", count: 1 },
 ];
 
-const modeItems: FlowingMenuItem[] = playModes.map(mode => ({
+const modeItems: FlowingMenuItem[] = playModes.map((mode) => ({
   text: mode.label,
   meta: `${mode.count} tables`,
   marquee: `${mode.label} · ${mode.note}`,
@@ -57,9 +57,9 @@ export default function PlayPage() {
   const filteredTables = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
     return sampleTables.filter(
-      table =>
+      (table) =>
         table.category === activeMode &&
-        table.name.toLocaleLowerCase().includes(normalizedQuery)
+        table.name.toLocaleLowerCase().includes(normalizedQuery),
     );
   }, [activeMode, searchQuery]);
 
@@ -154,7 +154,7 @@ export default function PlayPage() {
               <FlowingMenu
                 items={modeItems}
                 activeIndex={playModes.findIndex(
-                  mode => mode.label === activeMode
+                  (mode) => mode.label === activeMode,
                 )}
                 onItemClick={(_item, index, event) => {
                   event.preventDefault();
@@ -222,7 +222,7 @@ export default function PlayPage() {
                 id="table-search"
                 type="search"
                 value={searchQuery}
-                onChange={event => setSearchQuery(event.target.value)}
+                onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search this style"
               />
             </label>
@@ -231,7 +231,7 @@ export default function PlayPage() {
           <Panel className="play-table-panel">
             {filteredTables.length > 0 ? (
               <div className="club-table-scroll">
-                <table className="club-table play-table">
+                <table className="club-table club-table--stack play-table">
                   <thead>
                     <tr>
                       <th scope="col">Table</th>
@@ -245,9 +245,9 @@ export default function PlayPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTables.map(table => (
+                    {filteredTables.map((table) => (
                       <tr key={table.id}>
-                        <td>
+                        <td className="club-cell-main">
                           <div className="play-table-name">
                             <Avatar
                               name={table.name}

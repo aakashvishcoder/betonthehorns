@@ -51,7 +51,7 @@ export default function ProfilePage() {
   const metrics = useMemo(() => {
     const recentNet = sampleGames.reduce(
       (total, game) => total + game.chipChange,
-      0
+      0,
     );
     const winRate = Math.round((samplePlayer.wins / samplePlayer.games) * 100);
     return { recentNet, winRate };
@@ -60,10 +60,11 @@ export default function ProfilePage() {
   const filteredGames = useMemo(
     () =>
       sampleGames.filter(
-        game =>
-          historyFilter === "all" || game.result.toLowerCase() === historyFilter
+        (game) =>
+          historyFilter === "all" ||
+          game.result.toLowerCase() === historyFilter,
       ),
-    [historyFilter]
+    [historyFilter],
   );
 
   return (
@@ -195,7 +196,7 @@ export default function ProfilePage() {
               className="club-segmented profile-history-filters"
               aria-label="Filter example past games"
             >
-              {filters.map(filter => (
+              {filters.map((filter) => (
                 <button
                   key={filter.id}
                   type="button"
@@ -210,7 +211,7 @@ export default function ProfilePage() {
 
           <Panel className="profile-history-panel">
             <div className="club-table-scroll">
-              <table className="club-table profile-history-table">
+              <table className="club-table club-table--stack profile-history-table">
                 <caption className="sr-only">Example past poker games</caption>
                 <thead>
                   <tr>
@@ -223,12 +224,12 @@ export default function ProfilePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredGames.map(game => (
+                  {filteredGames.map((game) => (
                     <tr key={game.id}>
                       <td>
                         <time>{game.date}</time>
                       </td>
-                      <td>
+                      <td className="club-cell-main">
                         <button
                           type="button"
                           className="profile-game-link"
@@ -240,7 +241,7 @@ export default function ProfilePage() {
                             className="profile-mini-hand"
                             aria-label={`Example hand: ${game.bestHand}`}
                           >
-                            {game.cards.map(card => (
+                            {game.cards.map((card) => (
                               <DeckCard
                                 key={card}
                                 card={card}
@@ -314,7 +315,7 @@ export default function ProfilePage() {
 
       <Dialog
         open={Boolean(selectedGame)}
-        onOpenChange={open => !open && setSelectedGame(null)}
+        onOpenChange={(open) => !open && setSelectedGame(null)}
       >
         {selectedGame && (
           <DialogContent className="profile-game-dialog">
@@ -354,7 +355,7 @@ export default function ProfilePage() {
               className="profile-dialog-cards"
               aria-label={`Example ${selectedGame.bestHand} cards`}
             >
-              {selectedGame.cards.map(card => (
+              {selectedGame.cards.map((card) => (
                 <DeckCard key={card} card={card} width={58} foil={false} />
               ))}
             </div>

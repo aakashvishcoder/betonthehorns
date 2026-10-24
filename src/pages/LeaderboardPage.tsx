@@ -71,14 +71,14 @@ const periods: {
 ];
 
 function buildStandings(period: Period): Standing[] {
-  const config = periods.find(item => item.id === period) ?? periods[0];
+  const config = periods.find((item) => item.id === period) ?? periods[0];
   return sampleStandings
     .map((player, index) => ({
       ...player,
       score: Math.round(
         player.chips * config.chipFactor +
           player.wins * config.winWeight +
-          (sampleStandings.length - index) * config.orderWeight
+          (sampleStandings.length - index) * config.orderWeight,
       ),
       periodGames: Math.max(1, Math.round(player.games * config.gameFactor)),
       periodWins: Math.max(0, Math.round(player.wins * config.winFactor)),
@@ -111,13 +111,13 @@ export default function LeaderboardPage() {
   const [period, setPeriod] = useState<Period>("week");
   const [query, setQuery] = useState("");
   const standings = useMemo(() => buildStandings(period), [period]);
-  const periodLabel = periods.find(item => item.id === period) ?? periods[0];
+  const periodLabel = periods.find((item) => item.id === period) ?? periods[0];
   const topThree = standings.slice(0, 3);
-  const jamie = standings.find(player => player.name === "Jamie");
-  const visibleStandings = standings.filter(player =>
+  const jamie = standings.find((player) => player.name === "Jamie");
+  const visibleStandings = standings.filter((player) =>
     `${player.name} ${player.handle}`
       .toLowerCase()
-      .includes(query.trim().toLowerCase())
+      .includes(query.trim().toLowerCase()),
   );
 
   return (
@@ -146,7 +146,7 @@ export default function LeaderboardPage() {
             role="group"
             aria-label="Choose sample standings period"
           >
-            {periods.map(item => (
+            {periods.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -268,13 +268,13 @@ export default function LeaderboardPage() {
               <span className="sr-only">Search sample players</span>
               <input
                 value={query}
-                onChange={event => setQuery(event.target.value)}
+                onChange={(event) => setQuery(event.target.value)}
                 placeholder="Find a player"
               />
             </label>
           </div>
           <div className="club-table-scroll">
-            <table className="club-table leaderboard-table">
+            <table className="club-table club-table--stack leaderboard-table">
               <thead>
                 <tr>
                   <th>Rank</th>
@@ -286,7 +286,7 @@ export default function LeaderboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleStandings.map(player => (
+                {visibleStandings.map((player) => (
                   <tr
                     key={player.handle}
                     className={

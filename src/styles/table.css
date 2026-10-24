@@ -1,580 +1,554 @@
-.table-page {
+/* PokerNow-style table: seats around the felt, board in the middle,
+   own hand / chat / actions along the bottom, chip tray on the side. */
+.felt-room {
   max-width: 1420px;
   margin: 0 auto;
-  padding: 32px 34px 44px;
-}
-.table-page .club-page-heading {
-  margin-bottom: 24px;
-}
-.table-page .club-page-heading h1 {
-  font-size: clamp(30px, 4vw, 48px);
-}
-.table-back-link {
-  white-space: nowrap;
-}
-.table-layout {
+  padding: 20px 28px 32px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
 }
-.table-primary,
-.table-sidebar {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
-}
-.tabletop-panel,
-.table-actions-panel,
-.table-notes-panel,
-.table-chat-panel {
-  padding: 20px;
-}
-.tabletop-header {
+
+.felt-topbar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  align-items: flex-start;
+  gap: 14px;
 }
-.tabletop-header .club-section-heading,
-.table-sidebar .club-section-heading {
-  margin-top: 6px;
-  font-size: 18px;
-  letter-spacing: -0.5px;
+.felt-room-name {
+  text-align: center;
+  line-height: 1.2;
 }
-.tabletop-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.felt-room-name h1 {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 20px;
+  letter-spacing: -0.4px;
 }
-.table-design-leaf {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #e1b0f7;
+.felt-room-name span {
+  color: #a79aae;
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-}
-.table-card-toggle {
-  min-height: 36px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.tabletop-scene {
-  position: relative;
-  min-height: 580px;
-  margin-top: 16px;
-  isolation: isolate;
-  overflow: hidden;
-}
-.table-page .table-oval {
-  position: absolute;
-  inset: 9% 6% 15%;
-  width: auto;
-  height: auto;
-  border: 1px solid #6f2088;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse at 50% 42%,
-    #211127 0%,
-    #120d16 62%,
-    #09080a 100%
-  );
-  box-shadow:
-    inset 0 0 0 9px #0b090d,
-    inset 0 0 56px #3b094955,
-    0 16px 34px #0008;
-}
-.table-seat {
-  position: absolute;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 122px;
-}
-.table-seat-card {
-  padding: 6px 8px;
-  border: 1px solid #3b0949;
-  border-radius: 7px;
-  background: #120e15e8;
-  line-height: 1.15;
-}
-.table-seat-card strong,
-.table-seat-card span,
-.table-seat-card b {
-  display: block;
-}
-.table-seat-card strong {
-  font-size: 12px;
-  font-weight: 700;
-}
-.table-seat-card strong em {
-  margin-left: 5px;
-  color: #e1b0f7;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 500;
-}
-.table-seat-card span {
-  margin-top: 3px;
-  color: #d7c4dc;
-  font-size: 10px;
-}
-.table-seat-card small {
-  color: #a999ae;
-  font-size: 9px;
-}
-.table-seat-card b {
-  margin-top: 4px;
-  color: #fbf5fe;
-  font-size: 9px;
-  font-weight: 600;
-}
-.table-seat.is-current .table-seat-card {
-  border-color: #ba50e5;
-  background: #4e1764;
-  box-shadow: none;
-}
-.table-seat--top {
-  top: 1%;
-  left: 50%;
-  transform: translateX(-50%);
-}
-.table-seat--upper-left {
-  top: 25%;
-  left: 1%;
-}
-.table-seat--upper-right {
-  top: 25%;
-  right: 1%;
-  flex-direction: row-reverse;
-  text-align: right;
-}
-.table-seat--lower-left {
-  top: 65%;
-  left: 5%;
-}
-.table-seat--lower-right {
-  top: 65%;
-  right: 5%;
-  flex-direction: row-reverse;
-  text-align: right;
-}
-.table-seat--you {
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-}
-.table-board {
-  position: absolute;
-  z-index: 3;
-  top: 37%;
-  left: 50%;
-  display: flex;
-  gap: 8px;
-  transform: translateX(-50%);
-}
-.table-board .club-deck-card,
-.table-board .holo-card {
-  width: 72px;
-}
-.table-board .club-deck-image {
-  width: 72px;
-  aspect-ratio: 2 / 3;
-  border-radius: 9px;
-  overflow: hidden;
-}
-.table-board .club-deck-image img,
-.table-board .club-card-fallback {
-  width: 100%;
-  height: 100%;
-}
-.table-pot {
-  position: absolute;
-  z-index: 3;
-  top: 58%;
-  left: 50%;
-  display: grid;
-  min-width: 100px;
-  transform: translateX(-50%);
-  place-items: center;
-  color: #e1b0f7;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.table-pot span,
-.table-pot small {
-  font-size: 9px;
-  letter-spacing: 0.12em;
-}
-.table-pot strong {
-  color: #fbf5fe;
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 24px;
-  line-height: 1.1;
-}
-.table-hand-label {
-  position: absolute;
-  z-index: 3;
-  top: 66%;
-  left: 50%;
-  transform: translateX(-50%);
-  color: #d9b6e8;
-  font-size: 10px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.table-player-cards {
-  position: absolute;
-  z-index: 4;
-  top: 69%;
-  left: 50%;
+.felt-topbar-actions {
   display: flex;
-  gap: 10px;
-  transform: translateX(-50%);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
-.table-player-cards .club-deck-card,
-.table-player-cards .holo-card {
-  width: 70px;
+.felt-topbar .club-button {
+  min-height: 34px;
+  padding: 7px 12px;
 }
-.table-player-cards .club-deck-image {
-  width: 70px;
-  aspect-ratio: 2 / 3;
-  border-radius: 9px;
-  overflow: hidden;
-}
-.table-player-cards .club-deck-image img,
-.table-player-cards .club-card-fallback {
-  width: 100%;
-  height: 100%;
-}
-.tabletop-footer {
-  display: flex;
-  gap: 18px;
-  border-top: 1px solid #3b0949;
-  padding-top: 14px;
-  color: #b9aebe;
-  font-size: 11px;
-}
-.tabletop-footer strong {
-  color: #fbf5fe;
-  font-weight: 600;
-}
-.table-actions-panel {
+
+/* Stage + chip tray */
+.felt-stage-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
-  gap: 16px 20px;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 14px;
   align-items: center;
 }
-.table-actions-copy p {
-  margin-top: 5px;
-  color: #d9cde0;
-  font-size: 13px;
+.felt-stage {
+  --rx: 43%;
+  --ry: 41%;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  /* Keep the action bar on screen, like PokerNow; the oval flattens instead. */
+  max-height: max(380px, 100svh - 330px);
+  container: felt / inline-size;
+  isolation: isolate;
 }
-.table-actions {
+.felt-oval {
+  position: absolute;
+  inset: 10% 8%;
+  border-radius: 50%;
+  border: 2px solid #6f2088;
+  background: radial-gradient(
+    ellipse at 50% 45%,
+    #2a1233 0%,
+    #160b1b 60%,
+    #0a070c 100%
+  );
+  box-shadow:
+    0 0 0 12px #0d0910,
+    0 0 0 14px #3b0949,
+    inset 0 0 60px #3b094988,
+    0 22px 50px #000a;
+}
+.felt-oval::after {
+  content: "ALL IN";
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  transform: translateX(-50%);
+  color: #6f208866;
+  font-family: Georgia, serif;
+  font-size: clamp(14px, 2vw, 22px);
+  letter-spacing: 0.3em;
+}
+
+.felt-center {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -58%);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+.felt-pot {
+  display: grid;
+  justify-items: center;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: #0b080dcc;
+  border: 1px solid #5e206f;
+  line-height: 1.2;
+}
+.felt-pot span {
+  color: #e1b0f7;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.felt-pot strong {
+  color: #fbf5fe;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.felt-pot small {
+  color: #a79aae;
+  font-size: 10px;
+}
+.felt-board {
+  display: flex;
+  gap: 6px;
+}
+.felt-board-slot {
+  width: 64px;
+  aspect-ratio: 2 / 3;
+  border: 1px dashed #6f208877;
+  border-radius: 7px;
+}
+
+/* Seats sit on an ellipse; --cos/--sin come from the seat index. */
+.felt-seat,
+.felt-bet,
+.felt-dealer {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+}
+.felt-seat {
+  left: calc(50% + var(--cos) * var(--rx));
+  top: calc(50% + var(--sin) * var(--ry));
+  display: grid;
+  justify-items: center;
+}
+.felt-seat-cards {
+  display: flex;
+  gap: 2px;
+  margin-bottom: -16px;
+}
+.felt-seat-cards .club-deck-card:first-child {
+  transform: rotate(-5deg);
+}
+.felt-seat-cards .club-deck-card:last-child {
+  transform: rotate(5deg);
+}
+.felt-seat-box {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 128px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid #3b0949;
+  border-radius: 999px;
+  background: #120e15f2;
+  line-height: 1.15;
+  box-shadow: 0 6px 16px #0008;
+}
+.felt-seat-box strong,
+.felt-seat-box span {
+  display: block;
+}
+.felt-seat-box strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+.felt-seat-box span {
+  color: #e1b0f7;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.felt-seat-tag {
+  position: absolute;
+  top: -9px;
+  right: -6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #8625a6;
+  color: #fbf5fe;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.felt-seat.is-me .felt-seat-box {
+  border-color: #ba50e5;
+  background: #2a0f35;
+}
+.felt-seat.is-acting .felt-seat-box {
+  box-shadow:
+    0 0 0 2px #ba50e5,
+    0 0 22px #ba50e588;
+}
+.felt-seat.is-folded {
+  opacity: 0.45;
+}
+.felt-seat.is-folded .felt-seat-tag {
+  background: #430e1d;
+}
+.felt-timer {
+  width: 100%;
+  height: 3px;
+  margin-top: 5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #ba50e5, #dc576f);
+  transform-origin: left;
+  animation: felt-timer 20s linear forwards;
+}
+@keyframes felt-timer {
+  to {
+    transform: scaleX(0);
+  }
+}
+[data-motion-paused="true"] .felt-timer {
+  animation-play-state: paused;
+}
+.felt-seat--open {
+  min-width: 96px;
+  padding: 10px 14px;
+  border: 1px dashed #5e206f;
+  border-radius: 999px;
+  background: #0b080d99;
+  color: #a79aae;
+  font-size: 11px;
+}
+.felt-seat--open:hover {
+  border-color: #ba50e5;
+  color: #edd3fb;
+}
+
+.felt-bet {
+  left: calc(50% + var(--cos) * var(--rx) * 0.6);
+  top: calc(50% + var(--sin) * var(--ry) * 0.66);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 3px;
+  border-radius: 999px;
+  background: #0b080dcc;
+  color: #fbf5fe;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 12px;
+}
+.felt-dealer {
+  left: calc(50% + var(--cos) * var(--rx) * 0.72 + 34px);
+  top: calc(50% + var(--sin) * var(--ry) * 0.72);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fbf5fe;
+  color: #3b0949;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow:
+    0 2px 0 #b9aebe,
+    0 4px 8px #0008;
+}
+
+/* Chips reuse .poker-chip / .chip-rim from index.css, resized here. */
+.felt-chip-mini {
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  box-shadow: 0 2px 0 #3b0949;
+}
+.felt-chip-mini .chip-rim {
+  border-width: 1px;
+  outline: none;
+}
+.felt-chip-rail {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 16px 8px;
+  border: 1px solid #3b0949;
+  border-radius: 46px;
+  background: linear-gradient(180deg, #120e15, #0a070c);
+  box-shadow:
+    inset 0 0 0 4px #0d0910,
+    inset 0 0 0 5px #6f208855;
+}
+.felt-rail-label {
+  color: #a79aae;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.felt-rail-stack {
+  margin-top: -12px;
+  color: #fbf5fe;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px;
+}
+.felt-rail-chip {
+  padding: 0 0 12px;
+  border: 0;
+  background: none;
+  transition: transform 160ms;
+}
+.felt-rail-chip:hover {
+  transform: translateY(-3px);
+}
+.felt-rail-chip .poker-chip {
+  display: block;
+  width: 60px;
+  height: 60px;
+  padding: 5px;
+}
+.felt-rail-chip .chip-rim {
+  border-width: 2px;
+  outline-offset: -5px;
+}
+.felt-rail-chip .chip-rim span {
+  font-size: 15px;
+}
+.felt-rail-clear {
+  border: 0;
+  background: none;
+  color: #a79aae;
+  font-size: 10px;
+  text-decoration: underline;
+}
+
+/* Bottom bar: own hand | chat | actions */
+.felt-bottom {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(300px, 420px);
+  gap: 16px;
+  align-items: end;
+}
+.felt-bottom--no-chat {
+  grid-template-columns: auto minmax(300px, 420px);
+  justify-content: space-between;
+}
+.felt-my-hand {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+.felt-my-cards {
   display: flex;
   gap: 8px;
 }
-.table-actions .club-button {
-  min-height: 39px;
-  padding-inline: 14px;
+.felt-my-hand > span {
+  color: #e1b0f7;
+  font-size: 12px;
+  font-weight: 600;
 }
-.table-actions .is-selected {
-  outline: 1px solid #e1b0f7;
-  outline-offset: 2px;
-}
-.table-raise-control {
-  grid-column: 1 / -1;
+.felt-chat {
   display: grid;
-  grid-template-columns: auto minmax(100px, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  color: #c9bbcf;
-  font-size: 11px;
+  gap: 8px;
+  max-height: 150px;
+  padding: 10px 12px;
+  border: 1px solid var(--club-border);
+  border-radius: 10px;
+  background: #0e0b11;
 }
-.table-raise-control input {
+.felt-chat ul {
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #d5c8da;
+  font-size: 12px;
+}
+.felt-chat strong {
+  color: #e1b0f7;
+}
+.felt-chat input,
+.felt-raise-row input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #5e206f;
+  border-radius: 6px;
+  background: #0d0b10;
+  color: #fbf5fe;
+  font-size: 12px;
+}
+.felt-actions {
+  display: grid;
+  gap: 8px;
+}
+.felt-actions p {
+  color: #a79aae;
+  font-size: 11px;
+  text-align: right;
+}
+.felt-action-buttons {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+}
+.felt-action-buttons .club-button {
+  min-height: 48px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.felt-presets {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+.felt-presets .club-button {
+  min-height: 30px;
+  padding: 4px;
+  font-size: 10px;
+}
+.felt-raise-row {
+  display: grid;
+  grid-template-columns: 1fr 86px;
+  gap: 10px;
+  align-items: center;
+}
+.felt-raise-row input[type="range"] {
   width: 100%;
   accent-color: #ba50e5;
 }
-.table-raise-control output {
-  color: #fbf5fe;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.table-notes-panel dl {
-  display: grid;
-  gap: 12px;
-  margin: 18px 0;
-}
-.table-notes-panel dl div {
-  border-bottom: 1px solid #3b0949;
-  padding-bottom: 10px;
-}
-.table-notes-panel dt {
-  color: #b9aebe;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.table-notes-panel dd {
-  margin: 4px 0 0;
-  color: #f3eafa;
-  font-size: 12px;
-  line-height: 1.35;
-}
-.table-chat-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.table-chat-heading > svg {
-  color: #d081f1;
-}
-.table-chat-list {
-  display: grid;
-  gap: 12px;
-  margin: 17px 0;
-  padding: 0;
-  list-style: none;
-}
-.table-chat-list li {
-  display: grid;
-  gap: 3px;
-  border-left: 2px solid #6f2088;
-  padding-left: 9px;
-}
-.table-chat-list strong {
-  color: #e1b0f7;
-  font-size: 11px;
-}
-.table-chat-list span {
-  color: #d5c8da;
-  font-size: 12px;
-  line-height: 1.35;
-}
-.table-chat-form {
-  border-top: 1px solid #3b0949;
-  padding-top: 13px;
-}
-.table-chat-form label {
-  display: block;
-  margin-bottom: 7px;
-  color: #c9bbcf;
-  font-size: 11px;
-}
-.table-chat-form > div {
-  display: flex;
-  gap: 7px;
-}
-.table-chat-form input {
-  min-width: 0;
-  width: 100%;
-  border: 1px solid #5e206f;
-  border-radius: 5px;
-  background: #0d0b10;
-  color: #fbf5fe;
-  padding: 9px;
-  font: inherit;
-  font-size: 12px;
-}
-.table-chat-form .club-button {
-  padding-inline: 11px;
-  font-size: 11px;
-}
-.table-chat-form p {
-  margin-top: 8px;
-  color: #95899b;
-  font-size: 10px;
-  line-height: 1.35;
-}
-@media (max-width: 1120px) {
-  .table-layout {
-    grid-template-columns: minmax(0, 1fr) 235px;
+
+@media (max-width: 1100px) {
+  .felt-stage {
+    aspect-ratio: 4 / 3;
   }
-  .table-seat--upper-left {
-    left: 0;
+  .felt-bottom,
+  .felt-bottom--no-chat {
+    grid-template-columns: auto minmax(0, 1fr);
   }
-  .table-seat--upper-right {
-    right: 0;
-  }
-  .table-seat--lower-left {
-    left: 1%;
-  }
-  .table-seat--lower-right {
-    right: 1%;
-  }
-}
-@media (max-width: 1120px) {
-  .table-layout {
-    grid-template-columns: 1fr;
-  }
-  .table-sidebar {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-@media (max-width: 620px) {
-  .table-page {
-    padding: 22px 14px 32px;
-  }
-  .table-page .club-page-heading {
-    gap: 14px;
-    align-items: flex-start;
-  }
-  .table-page .club-page-heading h1 {
-    font-size: 29px;
-  }
-  .tabletop-panel,
-  .table-actions-panel,
-  .table-notes-panel,
-  .table-chat-panel {
-    padding: 14px;
-  }
-  .tabletop-header {
-    display: block;
-  }
-  .tabletop-controls {
-    justify-content: flex-start;
-    margin-top: 12px;
-  }
-  .tabletop-scene {
-    min-height: 500px;
-    margin-inline: -5px;
-  }
-  .table-page .table-oval {
-    inset: 11% 0 15%;
-  }
-  .table-seat {
-    min-width: auto;
-    gap: 4px;
-  }
-  .table-seat .club-avatar {
-    --avatar-size: 28px !important;
-  }
-  .table-seat-card {
-    padding: 4px 5px;
-  }
-  .table-seat-card strong {
-    font-size: 10px;
-  }
-  .table-seat-card span {
-    font-size: 8px;
-  }
-  .table-seat-card small,
-  .table-seat-card b {
-    display: none;
-  }
-  .table-seat--top {
-    top: 2%;
-  }
-  .table-seat--upper-left {
-    top: 25%;
-    left: 0;
-  }
-  .table-seat--upper-right {
-    top: 25%;
-    right: 0;
-  }
-  .table-seat--lower-left {
-    top: 65%;
-    left: 0;
-  }
-  .table-seat--lower-right {
-    top: 65%;
-    right: 0;
-  }
-  .table-board {
-    top: 38%;
-    gap: 4px;
-  }
-  .table-board .club-deck-card,
-  .table-board .holo-card {
-    width: 44px;
-  }
-  .table-board .club-deck-image {
-    width: 44px;
-    border-radius: 5px;
-  }
-  .table-pot {
-    top: 57%;
-  }
-  .table-pot strong {
-    font-size: 20px;
-  }
-  .table-hand-label {
-    top: 65%;
-    font-size: 9px;
-  }
-  .table-player-cards {
-    top: 70%;
-    gap: 7px;
-  }
-  .table-player-cards .club-deck-card,
-  .table-player-cards .holo-card {
-    width: 62px;
-  }
-  .table-player-cards .club-deck-image {
-    width: 62px;
-    border-radius: 6px;
-  }
-  .tabletop-footer {
-    gap: 10px;
-    justify-content: space-between;
-    font-size: 10px;
-  }
-  .tabletop-footer .club-muted {
-    display: none;
-  }
-  .table-actions-panel {
-    grid-template-columns: 1fr;
-  }
-  .table-actions {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .table-actions .club-button {
-    min-width: 0;
-    padding-inline: 6px;
-  }
-  .table-raise-control {
-    grid-template-columns: 1fr auto;
-  }
-  .table-raise-control input {
+  .felt-chat {
     grid-column: 1 / -1;
     grid-row: 2;
   }
-  .table-sidebar {
-    grid-template-columns: 1fr;
-  }
 }
-@media (max-width: 390px) {
-  .table-page {
-    padding-inline: 10px;
-  }
-  .table-board {
+
+/* Narrow table (sidebar layouts, tablets, phones): compact seats and board. */
+@container felt (max-width: 760px) {
+  .felt-board {
     gap: 3px;
   }
-  .table-seat-card {
-    max-width: 72px;
-    overflow: hidden;
+  .felt-board .club-deck-card,
+  .felt-board-slot {
+    width: clamp(36px, 8cqi, 56px);
   }
-  .table-seat-card span {
-    white-space: nowrap;
+  .felt-seat-cards .club-deck-card {
+    width: clamp(22px, 5cqi, 34px);
+  }
+  .felt-seat-cards {
+    margin-bottom: -10px;
+  }
+  .felt-seat-box {
+    min-width: 0;
+    gap: 5px;
+    padding: 4px 8px 4px 4px;
+  }
+  .felt-seat-box .club-avatar {
+    --avatar-size: 22px !important;
+  }
+  .felt-seat-box strong,
+  .felt-seat-box span {
+    font-size: 10px;
+  }
+  .felt-seat--open {
+    min-width: 0;
+    padding: 6px 9px;
+    font-size: 9px;
+  }
+  .felt-pot {
+    padding: 2px 10px;
+  }
+  .felt-bet {
+    font-size: 10px;
+  }
+  .felt-dealer {
+    left: calc(50% + var(--cos) * var(--rx) * 0.72 + 24px);
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
   }
 }
 
-/* Keep pot units, hand caption, and hole cards in separate readable bands. */
-.table-pot span,
-.table-pot small {
-  line-height: 1;
-}
-.table-hand-label {
-  line-height: 1.2;
-}
+/* Phones: tall table, chip tray becomes a row, bottom bar stacks. */
 @media (max-width: 620px) {
-  .table-hand-label {
-    top: 66%;
+  .felt-room {
+    padding: 14px 10px 24px;
+  }
+  .felt-topbar {
+    flex-wrap: wrap;
+  }
+  .felt-room-name {
+    order: -1;
+    width: 100%;
+  }
+  .felt-stage-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .felt-stage {
+    --rx: 36%;
+    --ry: 42%;
+    aspect-ratio: 3 / 4;
+    max-height: none;
+  }
+  .felt-oval {
+    inset: 8% 6%;
+  }
+  .felt-chip-rail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px 14px;
+    padding: 10px 16px;
+  }
+  .felt-rail-stack {
+    margin-top: 0;
+  }
+  .felt-rail-chip .poker-chip {
+    width: 46px;
+    height: 46px;
+  }
+  .felt-rail-chip .chip-rim span {
+    font-size: 12px;
+  }
+  .felt-bottom,
+  .felt-bottom--no-chat {
+    grid-template-columns: 1fr;
+  }
+  .felt-chat {
+    grid-row: auto;
+  }
+  .felt-actions p {
+    text-align: center;
   }
 }
