@@ -39,6 +39,7 @@ test("sends the coach prompt, recent history, model and reply cap to Muse", asyn
   assert.equal(sent.headers.Authorization, "Bearer test-key");
   assert.equal(sent.body.model, "muse-spark-1.3");
   assert.equal(sent.body.max_completion_tokens, COACH.maxReplyTokens);
+  assert.equal(sent.body.reasoning_effort, "low");
   assert.equal(sent.body.messages[0].role, "developer");
   assert.match(sent.body.messages[0].content, /Answer only questions about poker/);
   // Developer prompt + only the last 6 chat messages.

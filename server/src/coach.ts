@@ -7,7 +7,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 export const COACH = {
   baseUrl: process.env.MUSE_BASE_URL ?? "https://api.meta.ai/v1",
   model: process.env.MUSE_MODEL ?? "muse-spark-1.3",
-  maxReplyTokens: 400,
+  /** Muse Spark is a reasoning model: this caps thinking + answer together. */
+  maxReplyTokens: 800,
+  /** Low thinking keeps answers quick and cheap; at the default it used up the whole budget thinking. */
+  reasoningEffort: "low",
   dailyCap: 30,
   /** Messages of history sent per request (user + coach turns). */
   historyMessages: 6,
@@ -92,16 +95,17 @@ export async function askCoach(history: ChatMessage[], apiKey: string, fetchImpl
       model: COACH.model,
       messages: [{ role: "developer", content: COACH_PROMPT }, ...history],
       max_completion_tokens: COACH.maxReplyTokens,
+      reasoning_effort: COACH.reasoningEffort,
     }),
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Muse API ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
+    choices?: { message?: { content?: string | null }; finish_reason?: string }[];
     usage?: { prompt_tokens: number; completion_tokens: number };
   };
   const reply = data.choices?.[0]?.message?.content?.trim();
-  if (!reply) throw new Error("Muse API returned no reply");
+  if (!reply) throw new Error(`Muse API returned no reply (finish_reason ${data.choices?.[0]?.finish_reason ?? "?"})`);
   return { reply, usage: data.usage };
 }
 
