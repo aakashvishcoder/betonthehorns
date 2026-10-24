@@ -17,6 +17,5 @@ pub const ELO_K: i64 = 32;
 /// Rating gaps beyond this count as this much when computing expected scores.
 pub const MAX_RATING_DIFF: i64 = 800;
 
-pub const MIN_PLAYERS: usize = 2;
-
-pub const MAX_PLAYERS: usize = 9;
+/// Largest table (six-max).
+pub const MAX_PLAYERS: usize = 6;

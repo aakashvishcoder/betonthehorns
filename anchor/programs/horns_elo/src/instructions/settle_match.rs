@@ -23,7 +23,7 @@ pub struct SettleMatch<'info> {
         bump = game.bump
     )]
     pub game: Account<'info, Match>,
-    // remaining_accounts: one writable PlayerRating per player, in `game.players` order.
+    // remaining_accounts: one writable PlayerRating per player for `game.mode`, in `game.players` order.
 }
 
 pub fn handle_settle_match<'info>(
@@ -51,7 +51,7 @@ pub fn handle_settle_match<'info>(
     let mut ratings = Vec::with_capacity(game.players.len());
     for (info, wallet) in ctx.remaining_accounts.iter().zip(&game.players) {
         let (expected, _) =
-            Pubkey::find_program_address(&[PLAYER_SEED, wallet.as_ref()], &crate::ID);
+            Pubkey::find_program_address(&[PLAYER_SEED, wallet.as_ref(), &game.mode.seed()], &crate::ID);
         require_keys_eq!(info.key(), expected, ErrorCode::PlayerAccountMismatch);
         ratings.push(Account::<PlayerRating>::try_from(info)?);
     }

@@ -2,6 +2,29 @@ use anchor_lang::prelude::*;
 
 use crate::constants::MAX_PLAYERS;
 
+/// Ranked Sit & Go modes. Each has its own queue and its own Elo rating.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
+pub enum GameMode {
+    HeadsUp,
+    Four,
+    Six,
+}
+
+impl GameMode {
+    pub fn players(self) -> usize {
+        match self {
+            GameMode::HeadsUp => 2,
+            GameMode::Four => 4,
+            GameMode::Six => 6,
+        }
+    }
+
+    /// Seed byte for rating-account addresses.
+    pub fn seed(self) -> [u8; 1] {
+        [self as u8]
+    }
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Config {
@@ -16,6 +39,7 @@ pub struct Config {
 #[derive(InitSpace)]
 pub struct PlayerRating {
     pub wallet: Pubkey,
+    pub mode: GameMode,
     pub rating: u32,
     pub games: u32,
     pub wins: u32,
@@ -26,6 +50,7 @@ pub struct PlayerRating {
 #[derive(InitSpace)]
 pub struct Match {
     pub id: u64,
+    pub mode: GameMode,
     #[max_len(MAX_PLAYERS)]
     pub players: Vec<Pubkey>,
     /// sha256(deck shuffle seed), posted before the deal.

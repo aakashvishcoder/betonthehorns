@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::{
     constants::*,
     error::ErrorCode,
-    state::{Config, Match},
+    state::{Config, GameMode, Match},
 };
 
 #[derive(Accounts)]
@@ -32,13 +32,11 @@ pub struct CreateMatch<'info> {
 /// deck can be proven fair once the seed is revealed at settlement.
 pub fn handle_create_match(
     ctx: Context<CreateMatch>,
+    mode: GameMode,
     players: Vec<Pubkey>,
     seed_commitment: [u8; 32],
 ) -> Result<()> {
-    require!(
-        (MIN_PLAYERS..=MAX_PLAYERS).contains(&players.len()),
-        ErrorCode::BadPlayerCount
-    );
+    require!(players.len() == mode.players(), ErrorCode::BadPlayerCount);
     for (i, player) in players.iter().enumerate() {
         require!(!players[..i].contains(player), ErrorCode::DuplicatePlayer);
     }
@@ -46,6 +44,7 @@ pub fn handle_create_match(
     let config = &mut ctx.accounts.config;
     ctx.accounts.game.set_inner(Match {
         id: config.match_count,
+        mode,
         places: vec![0; players.len()],
         players,
         seed_commitment,

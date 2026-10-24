@@ -12,7 +12,7 @@ use {
     },
     horns_elo::{
         constants::{CONFIG_SEED, MATCH_SEED, PLAYER_SEED},
-        state::{Config, Match, PlayerRating},
+        state::{Config, GameMode, Match, PlayerRating},
     },
     solana_commitment_config::CommitmentConfig,
     solana_keypair::{read_keypair_file, Keypair},
@@ -117,8 +117,9 @@ fn devnet_match_flow() {
     let config: Config = read(&rpc, config_key).unwrap();
     assert_eq!(config.result_authority, server.pubkey());
 
-    // Fresh players each run; the deployer funds their rent and the server's match rent.
-    let players: Vec<Keypair> = (0..3).map(|_| Keypair::new()).collect();
+    // Fresh players each run (a 4-player game); the deployer funds their rent and the server's match rent.
+    let mode = GameMode::Four;
+    let players: Vec<Keypair> = (0..4).map(|_| Keypair::new()).collect();
     let wallets: Vec<Pubkey> = players.iter().map(|p| p.pubkey()).collect();
     let mut funding: Vec<Instruction> = wallets
         .iter()
@@ -127,9 +128,9 @@ fn devnet_match_flow() {
     if rpc.get_balance(&server.pubkey()).unwrap() < LAMPORTS_PER_SOL / 50 {
         funding.push(transfer(deployer.pubkey(), server.pubkey(), LAMPORTS_PER_SOL / 20));
     }
-    ok("fund 3 test players (+ server if low)", send(&rpc, &funding, &deployer, &[]));
+    ok("fund 4 test players (+ server if low)", send(&rpc, &funding, &deployer, &[]));
 
-    let player_key = |w: &Pubkey| pda(&[PLAYER_SEED, w.as_ref()]);
+    let player_key = |w: &Pubkey| pda(&[PLAYER_SEED, w.as_ref(), &mode.seed()]);
     for (i, p) in players.iter().enumerate() {
         let register = ix(
             horns_elo::accounts::RegisterPlayer {
@@ -137,7 +138,7 @@ fn devnet_match_flow() {
                 player: player_key(&p.pubkey()),
                 system_program: system_program::ID,
             },
-            horns_elo::instruction::RegisterPlayer {},
+            horns_elo::instruction::RegisterPlayer { mode },
             vec![],
         );
         ok(&format!("register player {i}"), send(&rpc, &[register], &deployer, &[p]));
@@ -154,7 +155,7 @@ fn devnet_match_flow() {
                 game: game_key,
                 system_program: system_program::ID,
             },
-            horns_elo::instruction::CreateMatch { players, seed_commitment: hash(&seed).to_bytes() },
+            horns_elo::instruction::CreateMatch { mode, players, seed_commitment: hash(&seed).to_bytes() },
             vec![],
         )
     };
@@ -165,8 +166,13 @@ fn devnet_match_flow() {
     );
     rejected(
         "create match with a duplicate player",
-        send(&rpc, &[create(&server, vec![wallets[0], wallets[0]])], &server, &[]),
+        send(&rpc, &[create(&server, vec![wallets[0], wallets[0], wallets[1], wallets[2]])], &server, &[]),
         6002,
+    );
+    rejected(
+        "create a 4-player match with 3 players",
+        send(&rpc, &[create(&server, wallets[..3].to_vec())], &server, &[]),
+        6001,
     );
     ok(&format!("create match #{id}"), send(&rpc, &[create(&server, wallets.clone())], &server, &[]));
 
@@ -187,35 +193,35 @@ fn devnet_match_flow() {
     };
     rejected(
         "settle with the wrong seed",
-        send(&rpc, &[settle(&server, &wallets, vec![2, 1, 3], [0; 32])], &server, &[]),
+        send(&rpc, &[settle(&server, &wallets, vec![2, 1, 3, 4], [0; 32])], &server, &[]),
         6006,
     );
     rejected(
         "settle signed by a non-server key",
-        send(&rpc, &[settle(&deployer, &wallets, vec![2, 1, 3], seed)], &deployer, &[]),
+        send(&rpc, &[settle(&deployer, &wallets, vec![2, 1, 3, 4], seed)], &deployer, &[]),
         6000,
     );
-    let swapped = [wallets[1], wallets[0], wallets[2]];
+    let swapped = [wallets[1], wallets[0], wallets[2], wallets[3]];
     rejected(
         "settle with player accounts out of order",
-        send(&rpc, &[settle(&server, &swapped, vec![2, 1, 3], seed)], &server, &[]),
+        send(&rpc, &[settle(&server, &swapped, vec![2, 1, 3, 4], seed)], &server, &[]),
         6005,
     );
-    ok("settle match (player 1 wins)", send(&rpc, &[settle(&server, &wallets, vec![2, 1, 3], seed)], &server, &[]));
+    ok("settle match (player 1 wins)", send(&rpc, &[settle(&server, &wallets, vec![2, 1, 3, 4], seed)], &server, &[]));
 
     let ratings: Vec<PlayerRating> = wallets.iter().map(|w| read(&rpc, player_key(w)).unwrap()).collect();
     let values: Vec<u32> = ratings.iter().map(|r| r.rating).collect();
     println!("  ratings after match: {values:?}");
-    assert_eq!(values, vec![1200, 1216, 1184]);
-    assert_eq!(ratings.iter().map(|r| (r.games, r.wins)).collect::<Vec<_>>(), vec![(1, 0), (1, 1), (1, 0)]);
+    assert_eq!(values, vec![1205, 1216, 1195, 1184]);
+    assert_eq!(ratings.iter().map(|r| (r.games, r.wins)).collect::<Vec<_>>(), vec![(1, 0), (1, 1), (1, 0), (1, 0)]);
 
     let game: Match = read(&rpc, game_key).unwrap();
-    assert!(game.settled && game.revealed_seed == seed && game.places == vec![2, 1, 3]);
+    assert!(game.settled && game.revealed_seed == seed && game.places == vec![2, 1, 3, 4]);
     println!("  match #{id} settled; seed reveal matches its commitment");
 
     rejected(
         "settle the same match twice",
-        send(&rpc, &[settle(&server, &wallets, vec![1, 2, 3], seed)], &server, &[]),
+        send(&rpc, &[settle(&server, &wallets, vec![1, 2, 3, 4], seed)], &server, &[]),
         6003,
     );
 }

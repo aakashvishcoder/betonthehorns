@@ -21,18 +21,19 @@ pub mod horns_elo {
         crate::instructions::initialize::handle_initialize(ctx, result_authority)
     }
 
-    /// A player's wallet creates its rating account at 1200.
-    pub fn register_player(ctx: Context<RegisterPlayer>) -> Result<()> {
-        crate::instructions::register_player::handle_register_player(ctx)
+    /// A player's wallet creates its rating account for one mode at 1200.
+    pub fn register_player(ctx: Context<RegisterPlayer>, mode: GameMode) -> Result<()> {
+        crate::instructions::register_player::handle_register_player(ctx, mode)
     }
 
     /// Game server opens a match and commits to the shuffle seed before the deal.
     pub fn create_match(
         ctx: Context<CreateMatch>,
+        mode: GameMode,
         players: Vec<Pubkey>,
         seed_commitment: [u8; 32],
     ) -> Result<()> {
-        crate::instructions::create_match::handle_create_match(ctx, players, seed_commitment)
+        crate::instructions::create_match::handle_create_match(ctx, mode, players, seed_commitment)
     }
 
     /// Game server reveals the seed, records final places and updates Elo.

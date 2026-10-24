@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 pub enum ErrorCode {
     #[msg("Only the game server key can do this")]
     Unauthorized,
-    #[msg("A match needs between 2 and 9 players")]
+    #[msg("Player count must match the mode: 2, 4 or 6")]
     BadPlayerCount,
     #[msg("A player appears twice in this match")]
     DuplicatePlayer,
