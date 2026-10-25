@@ -11,6 +11,7 @@ import {
   type PublicMatch,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useBlockCoach } from "@/components/coach/coachGate";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
 import { cardArt, cardName, deckArt, formatChips } from "@/lib/poker-design";
 import { subscribeChannel } from "@/lib/realtime";
@@ -115,6 +116,8 @@ export default function TablePage() {
   const [, params] = useRoute<{ matchId: string }>("/table/:matchId");
   const matchId = params?.matchId ?? "";
   const { address, displayAddress } = useAuth();
+  // Every match on this table is ranked: the AI coach stays off (face-down) until you leave.
+  useBlockCoach(true);
   const [match, setMatch] = useState<PublicMatch | null>(null);
   const [you, setYou] = useState<PrivateView | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
