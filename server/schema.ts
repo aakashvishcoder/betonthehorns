@@ -112,6 +112,30 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS match_events_match_time
       ON match_events (match_id, time DESC);
   `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS queue_seats (
+      wallet_id TEXT PRIMARY KEY,
+      mode TEXT NOT NULL CHECK (mode IN ('hands-up', 'sng-4', 'sng-6')),
+      joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS queue_seats_mode_joined
+      ON queue_seats (mode, joined_at);
+  `);
+  await query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS live_state JSONB`);
+  await query(`
+    CREATE TABLE IF NOT EXISTS match_chat (
+      match_id TEXT NOT NULL,
+      at BIGINT NOT NULL,
+      name TEXT NOT NULL,
+      text TEXT NOT NULL
+    );
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS match_chat_match_at
+      ON match_chat (match_id, at);
+  `);
     dbReady = true;
     console.log("[db] Timescale schema ready");
   } catch (error) {
@@ -130,6 +154,79 @@ async function tryHypertable(table: "elo_history" | "match_events") {
     );
   } catch (error) {
     console.warn(`[db] hypertable ${table}:`, (error as Error).message);
+  }
+}
+
+export async function enqueueSeat(walletId: string, mode: GameMode) {
+  await query(
+    `INSERT INTO queue_seats (wallet_id, mode, joined_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (wallet_id) DO UPDATE
+     SET mode = EXCLUDED.mode,
+         joined_at = CASE
+           WHEN queue_seats.mode = EXCLUDED.mode THEN queue_seats.joined_at
+           ELSE NOW()
+         END`,
+    [walletId, mode],
+  );
+}
+
+export async function listQueue(mode: GameMode) {
+  const result = await query<{ wallet_id: string; joined_at: Date }>(
+    `SELECT wallet_id, joined_at FROM queue_seats WHERE mode = $1 ORDER BY joined_at`,
+    [mode],
+  );
+  return result.rows.map((row) => ({
+    walletId: row.wallet_id,
+    joinedAt: new Date(row.joined_at).getTime(),
+  }));
+}
+
+export async function removeQueuedWallet(walletId: string) {
+  const result = await query<{ mode: GameMode }>(
+    `DELETE FROM queue_seats WHERE wallet_id = $1 RETURNING mode`,
+    [walletId],
+  );
+  return result.rows[0]?.mode ?? null;
+}
+
+/** Takes the oldest seats, or leaves the queue untouched when it is short. */
+export async function claimQueueSeats(mode: GameMode, need: number) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const listed = await client.query<{ wallet_id: string }>(
+      `SELECT wallet_id FROM queue_seats
+       WHERE mode = $1
+       ORDER BY joined_at
+       FOR UPDATE`,
+      [mode],
+    );
+    if (listed.rows.length < need) {
+      await client.query("COMMIT");
+      return null;
+    }
+    const taken = listed.rows.slice(0, need).map((row) => row.wallet_id);
+    await client.query(`DELETE FROM queue_seats WHERE wallet_id = ANY($1::text[])`, [taken]);
+    await client.query("COMMIT");
+    return taken;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function restoreQueueSeats(mode: GameMode, walletIds: string[]) {
+  for (const [index, walletId] of walletIds.entries()) {
+    await query(
+      `INSERT INTO queue_seats (wallet_id, mode, joined_at)
+       VALUES ($1, $2, TO_TIMESTAMP($3))
+       ON CONFLICT (wallet_id) DO UPDATE
+       SET mode = EXCLUDED.mode, joined_at = EXCLUDED.joined_at`,
+      [walletId, mode, index / 1000],
+    );
   }
 }
 
@@ -274,11 +371,15 @@ export async function escrowLocks(matchId: string) {
   return new Map(result.rows.map((row) => [row.wallet_id, row.stake]));
 }
 
-/** Give back stakes whose table died before settlement, such as a server restart. */
+/** Give back stakes whose table is gone. A live table in live_state keeps its lock. */
 export async function refundOpenEscrows() {
   if (!dbReady) return;
   const open = await query<{ match_id: string; wallet_id: string; mode: GameMode; stake: number }>(
-    `SELECT match_id, wallet_id, mode, stake FROM elo_locks WHERE settled = FALSE`,
+    `SELECT l.match_id, l.wallet_id, l.mode, l.stake
+     FROM elo_locks l
+     LEFT JOIN matches m ON m.id = l.match_id
+     WHERE l.settled = FALSE
+       AND (m.id IS NULL OR m.status <> 'playing' OR m.live_state IS NULL)`,
   );
   for (const lock of open.rows) {
     await query(
@@ -479,6 +580,61 @@ export async function setShowcase(
       [walletId, entry.key, entry.shown],
     );
   }
+}
+
+export type ChatLine = { name: string; text: string; at: number };
+
+export async function saveLiveMatch(id: string, live: unknown) {
+  if (!dbReady) return;
+  await query(`UPDATE matches SET live_state = $2 WHERE id = $1`, [id, live]);
+}
+
+export async function loadLiveMatchRow(id: string) {
+  if (!dbReady) return null;
+  const result = await query<{ live_state: unknown }>(
+    `SELECT live_state FROM matches WHERE id = $1 AND live_state IS NOT NULL`,
+    [id],
+  );
+  return result.rows[0]?.live_state ?? null;
+}
+
+export async function listLiveMatches() {
+  if (!dbReady) return [];
+  const result = await query<{ id: string; live_state: unknown }>(
+    `SELECT id, live_state FROM matches WHERE status = 'playing' AND live_state IS NOT NULL`,
+  );
+  return result.rows;
+}
+
+export async function findPlayingMatchId(walletId: string) {
+  if (!dbReady) return null;
+  const result = await query<{ id: string }>(
+    `SELECT m.id
+     FROM matches m
+     JOIN match_players p ON p.match_id = m.id
+     WHERE p.wallet_id = $1 AND m.status = 'playing'
+     ORDER BY m.started_at DESC
+     LIMIT 1`,
+    [walletId],
+  );
+  return result.rows[0]?.id ?? null;
+}
+
+export async function saveChatLine(matchId: string, message: ChatLine) {
+  if (!dbReady) return;
+  await query(
+    `INSERT INTO match_chat (match_id, at, name, text) VALUES ($1, $2, $3, $4)`,
+    [matchId, message.at, message.name, message.text],
+  );
+}
+
+export async function loadChat(matchId: string) {
+  if (!dbReady) return [];
+  const result = await query<ChatLine>(
+    `SELECT name, text, at FROM match_chat WHERE match_id = $1 ORDER BY at ASC`,
+    [matchId],
+  );
+  return result.rows.slice(-40);
 }
 
 export async function insertMatch(

@@ -37,6 +37,7 @@ export type PublicMatch = {
   commitHash: string;
   revealSeed: string | null;
   chain: ChainTx[];
+  revision?: number;
   players: PublicPlayer[];
   /** Ranked matches settle Elo; practice (vs AI) matches don't. */
   ranked: boolean;
