@@ -461,7 +461,8 @@ export async function refundOpenEscrows() {
        AND NOT EXISTS (
          SELECT 1 FROM elo_history h WHERE h.match_id = l.match_id
        )
-       AND (m.id IS NULL OR m.status <> 'playing' OR m.live_state IS NULL)`,
+       AND (m.id IS NULL OR m.status <> 'playing'
+            OR (m.live_state IS NULL AND m.started_at < NOW() - INTERVAL '2 minutes'))`,
   );
   for (const lock of open.rows) {
     await query(
@@ -733,7 +734,9 @@ export async function loadMatchView(id: string) {
 export async function listLeftoverPlayingIds() {
   if (!dbReady) return [];
   const result = await query<{ id: string }>(
-    `SELECT id FROM matches WHERE status = 'playing'`,
+    // Only games old enough to be truly left over: on serverless another instance may be
+    // creating a game right now (its live state isn't saved yet), and closing it killed it.
+    `SELECT id FROM matches WHERE status = 'playing' AND started_at < NOW() - INTERVAL '2 minutes'`,
   );
   return result.rows.map((row) => row.id);
 }

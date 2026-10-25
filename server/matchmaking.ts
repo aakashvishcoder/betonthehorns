@@ -36,6 +36,7 @@ import {
   stepRunout,
   timeoutAct,
 } from "./engine.js";
+import { waitUntil } from "@vercel/functions";
 import { listQueuePresence, publish } from "./ably.js";
 import { getPool } from "./db.js";
 import { recordAction, saveHistory, syncHistory } from "./history.js";
@@ -551,20 +552,26 @@ export async function startPractice(walletId: string, mode: GameMode) {
 
 /** End-of-game work, once per match across instances: Elo, hand history, style data, seats. */
 /**
- * End-of-game work. Awaited by the request that finished the game: on Vercel anything left
- * running after the response is frozen, which used to leave seats held ("Return to table" on a
- * finished game) and hand histories unsaved (Analyze had no hands). Seats and history are safe
- * to repeat, so they run before the once-only claim; Elo and style stats run once.
+ * End-of-game work, run by the request that finished the game. Seats and hand history are
+ * awaited (so nobody can "Return to table" and Analyze always has the hands) and are safe to
+ * repeat, so they run before the once-only claim. Elo settlement (Solana) and style stats
+ * (Snowflake) take seconds, so they run after the response via waitUntil: Vercel keeps the
+ * function alive until they finish (plain un-awaited work would be frozen); on a long-running
+ * server it is simply a background promise.
  */
 async function finalizeOnce(match: MatchState) {
   for (const player of match.players) if (byWallet.get(player.walletId) === match.id) byWallet.delete(player.walletId);
   await releaseSeats(match.id).catch((error) => console.warn("[seats] release", (error as Error).message));
   await saveHistory(match).catch((error) => console.warn("[history] save", (error as Error).message));
   if (!(await claimFinalize(match.id).catch(() => false))) return;
-  await import("./settle.js")
-    .then(({ settleMatch }) => settleMatch(match))
-    .catch((error) => console.warn("[elo] settle", (error as Error).message));
-  await finishTracking(match);
+  waitUntil(
+    (async () => {
+      await import("./settle.js")
+        .then(({ settleMatch }) => settleMatch(match))
+        .catch((error) => console.warn("[elo] settle", (error as Error).message));
+      await finishTracking(match);
+    })(),
+  );
 }
 
 async function publishQueue(mode: GameMode) {
