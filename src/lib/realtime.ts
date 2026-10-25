@@ -2,7 +2,9 @@ import * as Ably from "ably";
 import { api, type QueueSnapshot } from "@/lib/api";
 import type { GameModeId } from "@/lib/game-modes";
 
-const INBOX = "inbox";
+/** Must match CHANNEL_VERSION in server/ably.ts: older deployments use the bare names. */
+const CHANNEL_VERSION = "v2:";
+const INBOX = `${CHANNEL_VERSION}inbox`;
 
 let client: Ably.Realtime | null = null;
 let boundWallet: string | null = null;
@@ -56,7 +58,7 @@ export function watchConnection(
 }
 
 function channelOf(walletId: string, name: string) {
-  return getRealtime(walletId).channels.get(name);
+  return getRealtime(walletId).channels.get(`${CHANNEL_VERSION}${name}`);
 }
 
 export function subscribeChannel(
