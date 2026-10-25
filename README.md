@@ -28,7 +28,7 @@ No environment variables, API keys, authentication provider, database, or Manus 
 
 | Route | Design |
 | --- | --- |
-| `/` | Landing page with shining cards, smooth scrolling, and poker-night planner |
+| `/` | Front page with shining cards, smooth scrolling, and poker-night planner |
 | `/profile` | Example player profile, filtered past games, and local game-detail dialog |
 | `/play` | Table-style selection, sample room search, and local table setup |
 | `/table` | Six-seat sample table, foil community/hole cards, preview actions and local chat |
@@ -42,8 +42,8 @@ The landing page's **Take a seat** button opens the lobby. The shared app naviga
 src/
   main.tsx                     Plain React entry
   App.tsx                      Providers and lazy page routes
-  pages/                       Landing, profile, lobby, table, leaderboard
-  components/poker/            Landing visuals, effects, setup, smooth scrolling
+  pages/                       Front page, profile, lobby, table, leaderboard
+  components/poker/            Front-page visuals, effects, setup, smooth scrolling
   components/poker-app/        Shared app shell and typed UI/card primitives
   components/react-bits/       The five supplied effects and their type declarations
   components/ui/               Only the UI primitives actually used

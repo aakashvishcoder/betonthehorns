@@ -2,7 +2,7 @@ import { lazy, Suspense, type CSSProperties, type FormEvent, useEffect, useMemo,
 import { ArrowLeft, Eye, EyeOff, MessageCircle } from "lucide-react";
 import { Link, useRoute } from "wouter";
 import PokerAppShell, { usePokerMotion } from "@/components/poker-app/PokerAppShell";
-import { Avatar } from "@/components/poker-app/PokerUI";
+import { Avatar, CopyHash, explorerTx, RankMedal } from "@/components/poker-app/PokerUI";
 import {
   api,
   type ChatMessage,
@@ -282,6 +282,33 @@ export default function TablePage() {
           </div>
         </header>
 
+        {match?.commitHash && (
+          <section className="felt-fairness" aria-label="Match randomness and Solana transactions">
+            <CopyHash label="Commit" value={match.commitHash} />
+            <CopyHash
+              label="Seed"
+              value={match.revealSeed}
+              hidden="Locked until the match ends"
+            />
+            <div className="felt-chain">
+              <span>Transactions</span>
+              {(match.chain ?? []).length === 0 ? (
+                <p>The escrow transaction has not landed yet.</p>
+              ) : (
+                <ul>
+                  {match.chain.map((tx) => (
+                    <li key={tx.signature}>
+                      <a href={explorerTx(tx.signature)} target="_blank" rel="noreferrer">
+                        {tx.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        )}
+
         <div className="felt-stage-row">
           <div className="felt-stage" aria-label={`${mode.label} table, ${streetLabel}`}>
             <div className="felt-oval" aria-hidden="true" />
@@ -354,9 +381,13 @@ export default function TablePage() {
                         size={30}
                         tone={tones[index % tones.length]}
                       />
-                      <div>
+                      <RankMedal rank={seat.rank || "Bronze"} size={16} />
+                      <div className="felt-seat-meta">
                         <strong>{name}</strong>
-                        <span>{formatChips(seat.stack)}</span>
+                        <span>
+                          <em>{seat.rank || "Bronze"}</em>
+                          {formatChips(seat.stack)}
+                        </span>
                       </div>
                       {seat.lastAction && <em className="felt-seat-tag">{seat.lastAction}</em>}
                     </div>
@@ -555,7 +586,7 @@ export default function TablePage() {
                   ? `Winner ${
                       match.players.find((player) => player.walletId === match.winners[0]?.walletId)
                         ?.name ?? shortAddress(match.winners[0]?.walletId ?? "—")
-                    } · ELO escrow still on Solana`
+                    } · escrowed ELO follows the rating result`
                   : myTurn
                     ? `Your turn · ${legal.toCall ? `${legal.toCall} to call` : "you can check"}`
                     : `Waiting · ${streetLabel}`}

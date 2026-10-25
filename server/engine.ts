@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { seatLabel } from "./names.js";
-import { cardCode, compareHands, evaluate, makeDeck, shuffle } from "./poker.js";
+import { cardCode, compareHands, evaluate, makeDeck } from "./poker.js";
+import { newCommit, seededShuffle } from "./rng.js";
 import {
   MODE_SEATS,
   type ActionInput,
@@ -93,7 +94,7 @@ export function startHand(match: MatchState) {
     player.actedThisStreet = false;
   }
 
-  const deck = shuffle(makeDeck());
+  const deck = freshDeck(match);
   for (const player of alive) {
     player.hole = [deck.pop()!, deck.pop()!];
   }
@@ -160,6 +161,7 @@ export function createMatch(
       bot: botIds.includes(walletId),
       lastAction: null,
       actedThisStreet: false,
+      rank: "Bronze",
     })),
     dealerIndex: 0,
     street: "preflop",
@@ -179,6 +181,11 @@ export function createMatch(
     runoutAt: null,
     exposed: false,
     log: [],
+    chain: [],
+    ...(() => {
+      const commit = newCommit();
+      return { commitHash: commit.commitHash, seed: commit.seed, rngCounter: 0 };
+    })(),
   };
   startHand(match);
   return match;
@@ -338,17 +345,7 @@ function nextStreet(match: MatchState) {
   match.minRaise = match.blinds.bb;
   match.lastAggressor = null;
 
-  const deck = shuffle(makeDeck()).filter(
-    (card) =>
-      !match.board.some(
-        (board) => board.rank === card.rank && board.suit === card.suit,
-      ) &&
-      !match.players.some((player) =>
-        player.hole?.some(
-          (hole) => hole.rank === card.rank && hole.suit === card.suit,
-        ),
-      ),
-  );
+  const deck = freshDeck(match);
 
   if (match.street === "preflop") {
     match.board.push(deck.pop()!, deck.pop()!, deck.pop()!);
@@ -371,17 +368,7 @@ function nextStreet(match: MatchState) {
 }
 
 function runOutBoard(match: MatchState) {
-  const deck = shuffle(makeDeck()).filter(
-    (card) =>
-      !match.board.some(
-        (board) => board.rank === card.rank && board.suit === card.suit,
-      ) &&
-      !match.players.some((player) =>
-        player.hole?.some(
-          (hole) => hole.rank === card.rank && hole.suit === card.suit,
-        ),
-      ),
-  );
+  const deck = freshDeck(match);
   while (match.board.length < 5) match.board.push(deck.pop()!);
 }
 
@@ -504,21 +491,21 @@ function short(walletId: string) {
   return `${walletId.slice(0, 4)}…${walletId.slice(-4)}`;
 }
 
-function remainingDeck(match: MatchState) {
-  return shuffle(makeDeck()).filter(
-    (card) =>
-      !match.board.some(
-        (board) => board.rank === card.rank && board.suit === card.suit,
-      ) &&
-      !match.runoutQueue.some(
-        (queued) => queued.rank === card.rank && queued.suit === card.suit,
-      ) &&
-      !match.players.some((player) =>
-        player.hole?.some(
-          (hole) => hole.rank === card.rank && hole.suit === card.suit,
-        ),
-      ),
+function freshDeck(match: MatchState) {
+  match.rngCounter += 1;
+  const used = new Set<string>();
+  for (const card of match.board) used.add(cardCode(card));
+  for (const card of match.runoutQueue) used.add(cardCode(card));
+  for (const player of match.players) {
+    for (const card of player.hole ?? []) used.add(cardCode(card));
+  }
+  return seededShuffle(makeDeck(), match.seed, match.rngCounter).filter(
+    (card) => !used.has(cardCode(card)),
   );
+}
+
+function remainingDeck(match: MatchState) {
+  return freshDeck(match);
 }
 
 /** Peel the rest of the board one card at a time after an all-in. */
@@ -575,6 +562,9 @@ export function publicMatch(match: MatchState, viewer?: string) {
     actionDeadline: match.actionDeadline,
     winners: match.winners,
     log: match.log.slice(-12),
+    commitHash: match.commitHash,
+    revealSeed: match.status === "finished" ? match.seed : null,
+    chain: match.chain ?? [],
     players: match.players.map((player) => {
       const mine = player.walletId === viewer;
       const show = Boolean(
@@ -591,6 +581,7 @@ export function publicMatch(match: MatchState, viewer?: string) {
         bot: player.bot,
         lastAction: player.lastAction,
         name: seatLabel(player.walletId),
+        rank: player.rank || "Bronze",
         hole: player.hole
           ? show
             ? player.hole.map(cardCode)

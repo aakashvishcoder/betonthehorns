@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -14,9 +14,10 @@ import {
   Panel,
   Pill,
 } from "@/components/poker-app/PokerUI";
+import { api, type LeaderboardRow } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { gameModes, type GameModeId } from "@/lib/game-modes";
-import { standingsForMode } from "@/lib/poker-design";
+import { rankFromElo } from "@/lib/poker-design";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/leaderboard.css";
 
@@ -44,10 +45,26 @@ export default function LeaderboardPage() {
   const { address } = useAuth();
   const [mode, setMode] = useState<GameModeId>("hands-up");
   const [query, setQuery] = useState("");
-  const standings = useMemo(() => standingsForMode(mode), [mode]);
+  const [standings, setStandings] = useState<LeaderboardRow[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .leaderboard(mode)
+      .then((payload) => {
+        if (!cancelled) setStandings(payload.rows);
+      })
+      .catch(() => {
+        if (!cancelled) setStandings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
   const topThree = standings.slice(0, 3);
   const visible = standings.filter((player) =>
-    `${player.name} ${player.handle} ${player.address}`
+    `${player.name ?? ""} ${player.address}`
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   );
@@ -56,9 +73,9 @@ export default function LeaderboardPage() {
     <PokerAppShell section="leaderboard">
       <div className="leaderboard-page">
         <PageHeading
-          eyebrow="PUBLIC BOARD · DEMO"
+          eyebrow="PUBLIC BOARD"
           title="ELO by mode."
-          description="Hands Up, SNG 4, and SNG 6 each keep their own ladder. These wallets and ratings are demo data."
+          description="Hands Up, SNG 4, and SNG 6 each keep their own ladder. Ratings update when a table finishes."
           action={
             <Link href="/play" className="club-button club-button--secondary">
               Queue up <ArrowUpRight size={15} />
@@ -88,7 +105,7 @@ export default function LeaderboardPage() {
                 <span className="club-section-heading">Top horns</span>
                 <p>Highest ELO in {gameModes.find((item) => item.id === mode)?.label}.</p>
               </div>
-              <Pill tone="violet">Demo</Pill>
+              <Pill tone="violet">{topThree.length} seated</Pill>
             </div>
             <div className="leaderboard-podium">
               {topThree.map((player, index) => (
@@ -96,18 +113,18 @@ export default function LeaderboardPage() {
                   key={player.address}
                   className={`leaderboard-podium-card leaderboard-podium-card--${index + 1}`}
                 >
-                  <span className="leaderboard-podium-rank">#{player.rank}</span>
+                  <span className="leaderboard-podium-rank">#{player.place}</span>
                   <Avatar
-                    name={player.name}
+                    name={player.name || shortAddress(player.address)}
                     size={index === 0 ? 48 : 40}
                     tone={index === 1 ? "maroon" : "violet"}
                   />
                   <div className="leaderboard-podium-copy">
-                    <strong>{player.name}</strong>
+                    <strong>{player.name || shortAddress(player.address)}</strong>
                     <span>{shortAddress(player.address)}</span>
                   </div>
                   <b>{player.elo}</b>
-                  <small>{player.rankBadge} dNFT</small>
+                  <small>{rankFromElo(player.elo)} dNFT</small>
                 </article>
               ))}
             </div>
@@ -153,7 +170,7 @@ export default function LeaderboardPage() {
                     }
                   >
                     <td>
-                      <b className="leaderboard-rank">#{player.rank}</b>
+                      <b className="leaderboard-rank">#{player.place}</b>
                     </td>
                     <td>
                       <Link
@@ -161,7 +178,7 @@ export default function LeaderboardPage() {
                         className="leaderboard-player"
                       >
                         <Avatar
-                          name={player.name}
+                          name={player.name || shortAddress(player.address)}
                           size={34}
                           tone={
                             player.address === address ? "maroon" : "neutral"
@@ -169,17 +186,21 @@ export default function LeaderboardPage() {
                         />
                         <div>
                           <strong>
-                            {player.name}{" "}
+                            {player.name || shortAddress(player.address)}{" "}
                             {player.address === address && <em>You</em>}
                           </strong>
                           <span>{shortAddress(player.address)}</span>
+                          <small className="leaderboard-mobile-meta">
+                            {rankFromElo(player.elo)} · {player.games}{" "}
+                            {player.games === 1 ? "game" : "games"}
+                          </small>
                         </div>
                       </Link>
                     </td>
                     <td>
                       <strong>{player.elo}</strong>
                     </td>
-                    <td className="leaderboard-optional">{player.rankBadge}</td>
+                    <td className="leaderboard-optional">{rankFromElo(player.elo)}</td>
                     <td className="leaderboard-optional">{player.games}</td>
                     <td className="leaderboard-optional">
                       <Movement value={player.move} />
@@ -190,7 +211,11 @@ export default function LeaderboardPage() {
             </table>
           </div>
           {visible.length === 0 && (
-            <div className="club-empty">No wallet matches “{query}”.</div>
+            <div className="club-empty">
+              {query.trim()
+                ? `No wallet matches “${query.trim()}”.`
+                : "No finished tables in this mode yet."}
+            </div>
           )}
         </Panel>
       </div>

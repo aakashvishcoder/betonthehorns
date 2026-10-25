@@ -40,6 +40,51 @@
   min-height: 34px;
   padding: 7px 12px;
 }
+.felt-fairness {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #6f20884d;
+  border-radius: 12px;
+  background: #120e15e6;
+}
+.felt-chain {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.felt-chain span {
+  color: #d081f1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.felt-chain p {
+  margin: 0;
+  color: #a79aae;
+  font-size: 12px;
+}
+.felt-chain ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.felt-chain a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid #6f2088;
+  border-radius: 999px;
+  color: #e1b0f7;
+  font-size: 12px;
+  font-weight: 600;
+}
 
 /* Stage + chip tray */
 .felt-stage-row {
@@ -254,7 +299,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 128px;
+  min-width: 0;
+  max-width: min(220px, 46cqi);
   padding: 6px 12px 6px 6px;
   border: 1px solid #3b0949;
   border-radius: 999px;
@@ -262,20 +308,41 @@
   line-height: 1.15;
   box-shadow: 0 6px 16px #0008;
 }
-.felt-seat-box strong,
-.felt-seat-box span {
-  display: block;
+.felt-seat-meta {
+  min-width: 0;
 }
 .felt-seat-box strong {
+  display: block;
+  max-width: 9.5rem;
+  overflow: hidden;
   font-size: 12px;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.felt-seat-box span {
+.felt-seat-meta span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
   color: #e1b0f7;
   font-family: "Space Grotesk", sans-serif;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+.felt-seat-meta em {
+  color: var(--medal-face, #e8b07a);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.felt-seat-box:has(.rank-medal--bronze) { --medal-face: #e8b07a; }
+.felt-seat-box:has(.rank-medal--silver) { --medal-face: #f3f5f8; }
+.felt-seat-box:has(.rank-medal--gold) { --medal-face: #ffe08a; }
+.felt-seat-box:has(.rank-medal--diamond) { --medal-face: #b7f4ff; }
+.felt-seat-box:has(.rank-medal--platinum) { --medal-face: #f3f0ff; }
 .felt-seat-tag {
   position: absolute;
   top: -9px;
@@ -638,8 +705,18 @@
     --avatar-size: 22px !important;
   }
   .felt-seat-box strong,
-  .felt-seat-box span {
+  .felt-seat-meta span {
     font-size: 10px;
+  }
+  .felt-seat-box strong {
+    max-width: 5.6rem;
+  }
+  .felt-seat-box .rank-medal {
+    width: 13px !important;
+    height: 13px !important;
+  }
+  .felt-seat-meta em {
+    font-size: 8px;
   }
   .felt-seat--open {
     min-width: 0;

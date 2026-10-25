@@ -33,6 +33,13 @@ export type Player = {
   bot: boolean;
   lastAction: string | null;
   actedThisStreet: boolean;
+  /** Rank tier for this match's mode, from the rating they sat down with. */
+  rank: string;
+};
+
+export type ChainTx = {
+  label: string;
+  signature: string;
 };
 
 export type MatchState = {
@@ -60,6 +67,13 @@ export type MatchState = {
   /** Hole cards are face up while the board runs out. */
   exposed: boolean;
   log: string[];
+  /** Confirmed Solana transactions for this match, in the order they landed. */
+  chain: ChainTx[];
+  /** sha256 of the match seed. Public for the whole game. */
+  commitHash: string;
+  /** Private until the match finishes, then published so the shuffle can be checked. */
+  seed: string;
+  rngCounter: number;
 };
 
 export type ActionType = "fold" | "check" | "call" | "raise";
