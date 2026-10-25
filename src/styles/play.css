@@ -570,3 +570,13 @@
     flex-direction: column;
   }
 }
+
+/* Queue (ranked) and Practice vs AI (unranked) on each mode card. */
+.mode-card-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+}
+.mode-card-actions .club-button {
+  width: 100%;
+}

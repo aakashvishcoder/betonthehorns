@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { seatLabel } from "./names.js";
-import { cardCode, compareHands, evaluate, makeDeck, shuffle } from "./poker.js";
+import { cardCode, compareHands, evaluate, seededDeck } from "./poker.js";
 import {
   MODE_SEATS,
   type ActionInput,
@@ -93,9 +93,10 @@ export function startHand(match: MatchState) {
     player.actedThisStreet = false;
   }
 
-  const deck = shuffle(makeDeck());
+  match.deck = seededDeck(Buffer.from(match.seed, "hex"), match.handNumber);
+  match.handStartStacks = Object.fromEntries(match.players.map((p) => [p.walletId, p.stack]));
   for (const player of alive) {
-    player.hole = [deck.pop()!, deck.pop()!];
+    player.hole = [match.deck.pop()!, match.deck.pop()!];
   }
 
   match.street = "preflop";
@@ -137,6 +138,7 @@ export function createMatch(
   mode: GameMode,
   walletIds: string[],
   botIds: string[] = [],
+  options: { seed?: string; ranked?: boolean; chainMatchId?: string | null } = {},
 ): MatchState {
   const seats = MODE_SEATS[mode];
   const all = [...walletIds, ...botIds];
@@ -179,6 +181,13 @@ export function createMatch(
     runoutAt: null,
     exposed: false,
     log: [],
+    ranked: options.ranked ?? true,
+    seed: options.seed ?? randomBytes(32).toString("hex"),
+    deck: [],
+    places: {},
+    handStartStacks: {},
+    chainMatchId: options.chainMatchId ?? null,
+    elo: null,
   };
   startHand(match);
   return match;
@@ -338,17 +347,7 @@ function nextStreet(match: MatchState) {
   match.minRaise = match.blinds.bb;
   match.lastAggressor = null;
 
-  const deck = shuffle(makeDeck()).filter(
-    (card) =>
-      !match.board.some(
-        (board) => board.rank === card.rank && board.suit === card.suit,
-      ) &&
-      !match.players.some((player) =>
-        player.hole?.some(
-          (hole) => hole.rank === card.rank && hole.suit === card.suit,
-        ),
-      ),
-  );
+  const deck = match.deck;
 
   if (match.street === "preflop") {
     match.board.push(deck.pop()!, deck.pop()!, deck.pop()!);
@@ -371,18 +370,7 @@ function nextStreet(match: MatchState) {
 }
 
 function runOutBoard(match: MatchState) {
-  const deck = shuffle(makeDeck()).filter(
-    (card) =>
-      !match.board.some(
-        (board) => board.rank === card.rank && board.suit === card.suit,
-      ) &&
-      !match.players.some((player) =>
-        player.hole?.some(
-          (hole) => hole.rank === card.rank && hole.suit === card.suit,
-        ),
-      ),
-  );
-  while (match.board.length < 5) match.board.push(deck.pop()!);
+  while (match.board.length < 5) match.board.push(match.deck.pop()!);
 }
 
 function awardUncontested(match: MatchState, winner: Player) {
@@ -465,14 +453,23 @@ function showdown(match: MatchState) {
 
 export function continueAfterShowdown(match: MatchState) {
   if (match.status !== "playing" || match.street !== "showdown") return;
-  for (const player of match.players) {
-    if (!player.busted && player.stack <= 0) {
-      player.busted = true;
-      player.folded = true;
-      player.lastAction = "Out";
-    }
+  const bustedNow = match.players.filter((p) => !p.busted && p.stack <= 0);
+  for (const player of bustedNow) {
+    player.busted = true;
+    player.folded = true;
+    player.lastAction = "Out";
   }
-  if (living(match).length < 2) {
+  // Same-hand busts: the bigger starting stack places higher; equal stacks tie.
+  const survivors = living(match).length;
+  bustedNow.sort((a, b) => (match.handStartStacks[b.walletId] ?? 0) - (match.handStartStacks[a.walletId] ?? 0));
+  bustedNow.forEach((player, k) => {
+    const prev = bustedNow[k - 1];
+    const tied = prev && match.handStartStacks[prev.walletId] === match.handStartStacks[player.walletId];
+    match.places[player.walletId] = tied ? match.places[prev.walletId]! : survivors + k + 1;
+  });
+  // Practice vs AI ends once every human has busted; the AIs don't play on alone.
+  const humans = match.players.filter((p) => !p.bot);
+  if (living(match).length < 2 || (match.players.some((p) => p.bot) && humans.every((p) => p.busted))) {
     finishMatch(match);
     return;
   }
@@ -493,7 +490,12 @@ function finishMatch(match: MatchState) {
   match.street = "complete";
   match.actionIndex = null;
   match.actionDeadline = null;
-  const champ = [...living(match)].sort((a, b) => b.stack - a.stack)[0];
+  const standing = [...living(match)].sort((a, b) => b.stack - a.stack);
+  standing.forEach((player, k) => {
+    const prev = standing[k - 1];
+    match.places[player.walletId] = prev && prev.stack === player.stack ? match.places[prev.walletId]! : k + 1;
+  });
+  const champ = standing[0];
   if (champ) {
     match.winners = [{ walletId: champ.walletId, amount: champ.stack }];
     log(match, `${short(champ.walletId)} wins the table`);
@@ -505,20 +507,7 @@ function short(walletId: string) {
 }
 
 function remainingDeck(match: MatchState) {
-  return shuffle(makeDeck()).filter(
-    (card) =>
-      !match.board.some(
-        (board) => board.rank === card.rank && board.suit === card.suit,
-      ) &&
-      !match.runoutQueue.some(
-        (queued) => queued.rank === card.rank && queued.suit === card.suit,
-      ) &&
-      !match.players.some((player) =>
-        player.hole?.some(
-          (hole) => hole.rank === card.rank && hole.suit === card.suit,
-        ),
-      ),
-  );
+  return match.deck;
 }
 
 /** Peel the rest of the board one card at a time after an all-in. */
@@ -575,6 +564,14 @@ export function publicMatch(match: MatchState, viewer?: string) {
     actionDeadline: match.actionDeadline,
     winners: match.winners,
     log: match.log.slice(-12),
+    ranked: match.ranked,
+    places: match.places,
+    /** sha256(seed): committed on Solana before the first deal (ranked matches). */
+    commitment: createHash("sha256").update(Buffer.from(match.seed, "hex")).digest("hex"),
+    /** Revealed when the match ends so anyone can replay every deck. */
+    seed: match.status === "finished" ? match.seed : null,
+    chainMatchId: match.chainMatchId,
+    elo: match.elo,
     players: match.players.map((player) => {
       const mine = player.walletId === viewer;
       const show = Boolean(

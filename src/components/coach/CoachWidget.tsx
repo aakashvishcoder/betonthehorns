@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowUp, X } from "lucide-react";
 import { deckArt } from "@/lib/poker-design";
+import { sessionHeader } from "@/lib/session";
 import { useCoachBlocked } from "./coachGate";
 import "@/styles/coach.css";
 
@@ -83,7 +84,8 @@ export default function CoachWidget() {
     try {
       const res = await fetch("/api/coach", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // Signed-in players send their session so the server can keep the coach off at ranked tables.
+        headers: { "Content-Type": "application/json", ...sessionHeader() },
         body: JSON.stringify({
           browserId: browserId(),
           messages: next.slice(-HISTORY_SENT),

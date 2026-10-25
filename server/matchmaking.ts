@@ -15,7 +15,19 @@ import {
   stepRunout,
   timeoutAct,
 } from "./engine.js";
+import { randomBytes } from "node:crypto";
 import { publish } from "./ably.js";
+import { commitRankedMatch, ratingFor, settleRankedMatch } from "./chain.js";
+import {
+  driveAi,
+  finishTracking,
+  practiceSeats,
+  refundPracticeGame,
+  registerPractice,
+  syncHands,
+  takePracticeGame,
+  trackAction,
+} from "./practice.js";
 import { seatLabel } from "./names.js";
 import { MODE_SEATS, MODES, type ActionInput, type GameMode, type MatchState } from "./types.js";
 
@@ -100,10 +112,11 @@ async function tryMatch(mode: GameMode) {
 
   const taken = waiting.splice(0, need);
   queues.set(mode, waiting);
-  const match = createMatch(
-    mode,
-    taken.map((seat) => seat.walletId),
-  );
+  const wallets = taken.map((seat) => seat.walletId);
+  // Provably fair: commit sha256(seed) on Solana before a single card is dealt.
+  const seed = randomBytes(32).toString("hex");
+  const chainMatchId = await commitRankedMatch(mode, wallets, seed);
+  const match = createMatch(mode, wallets, [], { seed, ranked: true, chainMatchId });
   matches.set(match.id, match);
   chats.set(match.id, []);
   for (const player of match.players) {
@@ -132,11 +145,53 @@ async function tryMatch(mode: GameMode) {
   return match;
 }
 
+/** Practice vs AI: an unranked table right away, AI personas in the other seats. */
+export async function startPractice(walletId: string, mode: GameMode) {
+  const existing = walletMatch(walletId);
+  if (existing && existing.status === "playing") return { matchId: existing.id };
+  if (existing) byWallet.delete(walletId);
+  if (!takePracticeGame(walletId)) {
+    throw Object.assign(new Error("You've played today's AI practice games. Come back tomorrow!"), { status: 429 });
+  }
+  try {
+    leaveAllQueues(walletId);
+    const elo = (await ratingFor(walletId, mode)) ?? 1200;
+    const { ids, players } = await practiceSeats(walletId, mode, MODE_SEATS[mode], elo);
+    const match = createMatch(mode, [walletId], ids, { ranked: false });
+    matches.set(match.id, match);
+    chats.set(match.id, []);
+    byWallet.set(walletId, match.id);
+    registerPractice(match, players);
+    await insertMatch(match.id, match.mode, publicMatch(match)).catch((error) =>
+      console.warn("[db] persist practice", (error as Error).message),
+    );
+    await broadcastMatch(match, "matched");
+    return { matchId: match.id };
+  } catch (error) {
+    refundPracticeGame(walletId);
+    throw error;
+  }
+}
+
 async function publishQueue(mode: GameMode) {
   await publish(`queue:${mode}`, "waiting", queueSnapshot(mode));
 }
 
+const finalized = new Set<string>();
+
+/** Once a match ends: save style data; if ranked, settle on-chain and push the Elo changes. */
+async function finalizeOnce(match: MatchState) {
+  if (match.status !== "finished" || finalized.has(match.id)) return;
+  finalized.add(match.id);
+  await finishTracking(match);
+  if (!match.ranked) return;
+  match.elo = await settleRankedMatch(match);
+  if (match.elo) await broadcastMatch(match, "elo");
+}
+
 export async function broadcastMatch(match: MatchState, name = "state") {
+  syncHands(match);
+  void finalizeOnce(match);
   const publicState = publicMatch(match);
   await publish(`table:${match.id}`, name, publicState);
   for (const player of match.players) {
@@ -162,6 +217,7 @@ export async function playAction(
 ) {
   const match = matches.get(matchId);
   if (!match) throw new Error("Match not found");
+  trackAction(match, walletId, input);
   applyAction(match, walletId, input);
   await logMatchEvent(match.id, input.type, walletId, input).catch((error) =>
     console.warn("[db] event", (error as Error).message),
@@ -199,6 +255,11 @@ export function getChat(matchId: string) {
 function tick() {
   for (const match of matches.values()) {
     if (match.status !== "playing") continue;
+    driveAi(match, async (walletId, input) => {
+      trackAction(match, walletId, input);
+      applyAction(match, walletId, input);
+      await broadcastMatch(match);
+    });
 
     if (match.runoutAt && Date.now() >= match.runoutAt) {
       try {
@@ -225,6 +286,8 @@ function tick() {
       Date.now() >= match.actionDeadline
     ) {
       try {
+        const actor = match.players[match.actionIndex]!;
+        trackAction(match, actor.walletId, { type: match.currentBet - actor.bet > 0 ? "fold" : "check" });
         timeoutAct(match);
         void broadcastMatch(match);
       } catch (error) {

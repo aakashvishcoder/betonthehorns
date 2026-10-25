@@ -15,6 +15,7 @@ export const PROGRAM_ID = new PublicKey("E4WuDUxqymTCF7rqQz4a4ZmVhWuQJe9Pbrmy7ui
 // Anchor discriminators, from anchor/target/idl/horns_elo.json. They change only if an instruction is renamed.
 const IX = {
   registerPlayer: [242, 146, 194, 234, 234, 145, 228, 42],
+  sponsorPlayer: [80, 91, 120, 209, 83, 206, 122, 180],
   createMatch: [107, 2, 184, 145, 70, 142, 17, 165],
   settleMatch: [71, 124, 117, 96, 191, 217, 116, 24],
 };
@@ -74,6 +75,34 @@ export class SolanaChain implements Chain {
   constructor(connection: Connection, server: Keypair) {
     this.connection = connection;
     this.server = server;
+  }
+
+  /**
+   * Creates rating accounts (paid by the server) for any of these wallets that don't have one
+   * for this mode yet. Returns the wallets that were newly registered.
+   */
+  async ensureRegistered(wallets: string[], mode: Mode): Promise<string[]> {
+    const missing: string[] = [];
+    for (const w of wallets) if ((await this.rating(w, mode)) === null) missing.push(w);
+    if (!missing.length) return [];
+    const tx = new Transaction();
+    for (const w of missing) {
+      const wallet = new PublicKey(w);
+      tx.add(
+        new TransactionInstruction({
+          programId: PROGRAM_ID,
+          keys: [
+            { pubkey: this.server.publicKey, isSigner: true, isWritable: true },
+            { pubkey: configAddress(), isSigner: false, isWritable: false },
+            { pubkey: ratingAddress(wallet, mode), isSigner: false, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          ],
+          data: Buffer.concat([Buffer.from(IX.sponsorPlayer), wallet.toBuffer(), Buffer.from([MODE_INDEX[mode]])]),
+        }),
+      );
+    }
+    await sendAndConfirmTransaction(this.connection, tx, [this.server], { commitment: "confirmed" });
+    return missing;
   }
 
   async rating(wallet: string, mode: Mode) {

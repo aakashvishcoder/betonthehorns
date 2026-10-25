@@ -717,3 +717,12 @@
     text-align: center;
   }
 }
+
+/* End-of-game line above "Back to dashboard": Elo change or practice note. */
+.felt-result {
+  grid-column: 1 / -1;
+  margin: 0 0 6px;
+  color: #e1b0f7;
+  font-size: 13px;
+  text-align: center;
+}

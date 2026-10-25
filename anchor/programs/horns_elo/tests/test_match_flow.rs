@@ -161,3 +161,43 @@ fn match_flow_updates_elo_per_mode_and_checks_seed() {
 
     assert!(!send(&mut svm, settle_ix(server.pubkey(), 0, &ratings, vec![1, 2, 3, 4], seed), &server));
 }
+
+#[test]
+fn server_can_sponsor_a_players_rating_account() {
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!(concat!(env!("CARGO_TARGET_TMPDIR"), "/../deploy/horns_elo.so"));
+    svm.add_program(horns_elo::id(), bytes).unwrap();
+    let admin = Keypair::new();
+    let server = Keypair::new();
+    let stranger = Keypair::new();
+    for kp in [&admin, &server, &stranger] {
+        svm.airdrop(&kp.pubkey(), 1_000_000_000).unwrap();
+    }
+    let init = Instruction::new_with_bytes(
+        horns_elo::id(),
+        &horns_elo::instruction::Initialize { result_authority: server.pubkey() }.data(),
+        horns_elo::accounts::Initialize { admin: admin.pubkey(), config: pda(&[CONFIG_SEED]), system_program: system_program::ID }
+            .to_account_metas(None),
+    );
+    assert!(send(&mut svm, init, &admin));
+
+    let player_wallet = Keypair::new().pubkey(); // never signs, holds no SOL
+    let sponsor = |signer: Pubkey| {
+        Instruction::new_with_bytes(
+            horns_elo::id(),
+            &horns_elo::instruction::SponsorPlayer { wallet: player_wallet, mode: GameMode::Six }.data(),
+            horns_elo::accounts::SponsorPlayer {
+                result_authority: signer,
+                config: pda(&[CONFIG_SEED]),
+                player: rating_key(&player_wallet, GameMode::Six),
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+        )
+    };
+    assert!(!send(&mut svm, sponsor(stranger.pubkey()), &stranger), "only the game server can sponsor");
+    assert!(send(&mut svm, sponsor(server.pubkey()), &server));
+    let rating: PlayerRating = read(&svm, rating_key(&player_wallet, GameMode::Six));
+    assert_eq!((rating.wallet, rating.mode, rating.rating, rating.games), (player_wallet, GameMode::Six, 1200, 0));
+    assert!(!send(&mut svm, sponsor(server.pubkey()), &server), "can't create it twice");
+}

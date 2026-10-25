@@ -1,18 +1,33 @@
 import { useEffect, useState } from "react";
-import { ArrowUpRight, ShieldCheck, Trophy } from "lucide-react";
-import { Link } from "wouter";
+import { ArrowUpRight, Bot, ShieldCheck, Trophy } from "lucide-react";
+import { Link, useLocation } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
 import { PageHeading, Panel, Pill } from "@/components/poker-app/PokerUI";
 import { api, type PublicMatch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { gameModes } from "@/lib/game-modes";
 import { demoPlayerFromAddress } from "@/lib/poker-design";
+import { walletToast } from "@/lib/wallet-toast";
 import "@/styles/play.css";
 
 export default function PlayPage() {
   const { address } = useAuth();
   const player = demoPlayerFromAddress(address ?? "demo");
   const [live, setLive] = useState<PublicMatch | null>(null);
+  const [, navigate] = useLocation();
+  const [starting, setStarting] = useState<string | null>(null);
+
+  async function practice(mode: (typeof gameModes)[number]["id"]) {
+    setStarting(mode);
+    try {
+      const { matchId } = await api.practice(mode);
+      navigate(`/table/${matchId}`);
+    } catch (error) {
+      walletToast.error((error as Error).message || "Couldn't start a practice table.");
+    } finally {
+      setStarting(null);
+    }
+  }
 
   useEffect(() => {
     if (!address) return;
@@ -68,10 +83,21 @@ export default function PlayPage() {
                     <dd>{stats.games}</dd>
                   </div>
                 </dl>
-                <Link href={`/queue/${mode.id}`} className="club-button">
-                  Queue {mode.label}{" "}
-                  <ArrowUpRight size={15} aria-hidden="true" />
-                </Link>
+                <div className="mode-card-actions">
+                  <Link href={`/queue/${mode.id}`} className="club-button">
+                    Queue {mode.label}{" "}
+                    <ArrowUpRight size={15} aria-hidden="true" />
+                  </Link>
+                  <button
+                    type="button"
+                    className="club-button club-button--secondary"
+                    onClick={() => void practice(mode.id)}
+                    disabled={starting !== null}
+                  >
+                    {starting === mode.id ? "Seating the AIs…" : "Practice vs AI"}{" "}
+                    <Bot size={15} aria-hidden="true" />
+                  </button>
+                </div>
               </Panel>
             );
           })}
