@@ -1,8 +1,10 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import { ArrowUp, X } from "lucide-react";
+import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, RotateCcw, X } from "lucide-react";
+import LatticeLoader from "@/components/react-bits/LatticeLoader";
 import { deckArt } from "@/lib/poker-design";
 import { sessionHeader } from "@/lib/session";
 import { useCoachBlocked } from "./coachGate";
+import { formatReply } from "./formatReply";
 import "@/styles/coach.css";
 
 type Source = { title: string; link: string; source: string };
@@ -32,6 +34,15 @@ function browserId() {
 }
 browserId.fallback = undefined as string | undefined;
 
+/** Words (with their spacing) of a reply, for the typing reveal. */
+const words = (text: string) => text.match(/\S+\s*|\s+/g) ?? [];
+/** Delay before the next word: ~4s for a whole reply at most, with a little human jitter. */
+const wordDelay = (total: number) => Math.min(45, Math.max(12, 4000 / total)) * (0.6 + Math.random() * 0.8);
+/** While typing, a dangling "**" would show as asterisks; hide it until its closing pair arrives. */
+const hideOpenBold = (text: string) =>
+  (text.match(/\*\*/g)?.length ?? 0) % 2 ? text.replace(/\*\*(?![\s\S]*\*\*)/, "") : text;
+const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
 function loadChat(): Message[] {
   try {
     return JSON.parse(sessionStorage.getItem("allin-coach-chat") ?? "[]");
@@ -48,6 +59,10 @@ export default function CoachWidget() {
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** The reply being typed out: its index and how many words are showing. */
+  const [typing, setTyping] = useState<{ index: number; shown: number } | null>(null);
+  /** Whether the list is scrolled to the bottom (then new text keeps it there). */
+  const [atBottom, setAtBottom] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -58,8 +73,41 @@ export default function CoachWidget() {
         JSON.stringify(messages.slice(-30)),
       );
     } catch {}
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages, thinking]);
+  }, [messages]);
+
+  // Reveal the newest reply word by word.
+  useEffect(() => {
+    if (!typing) return;
+    const total = words(messages[typing.index]?.content ?? "").length;
+    if (typing.shown >= total) {
+      setTyping(null);
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setTyping({ index: typing.index, shown: typing.shown + 1 }),
+      wordDelay(total),
+    );
+    return () => window.clearTimeout(timer);
+  }, [typing, messages]);
+
+  // Follow new text only if the reader is already at the bottom; otherwise leave them be.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && atBottom) list.scrollTop = list.scrollHeight;
+  }, [messages, thinking, typing, notice, open, atBottom]);
+
+  function scrollToLatest() {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+    setAtBottom(true);
+  }
+
+  function clearChat() {
+    setMessages([]);
+    setTyping(null);
+    setNotice(null);
+    setAtBottom(true);
+    inputRef.current?.focus();
+  }
 
   useEffect(() => {
     if (blocked) setOpen(false);
@@ -78,9 +126,11 @@ export default function CoachWidget() {
     if (!text || thinking) return;
     const next = [...messages, { role: "user" as const, content: text }];
     setMessages(next);
+    setTyping(null);
     setDraft("");
     setNotice(null);
     setThinking(true);
+    setAtBottom(true); // sending a question always jumps to the conversation's end
     try {
       const res = await fetch("/api/coach", {
         method: "POST",
@@ -96,7 +146,7 @@ export default function CoachWidget() {
         sources?: Source[];
         error?: string;
       };
-      if (res.ok && data.reply)
+      if (res.ok && data.reply) {
         setMessages([
           ...next,
           {
@@ -105,7 +155,8 @@ export default function CoachWidget() {
             sources: data.sources?.length ? data.sources : undefined,
           },
         ]);
-      else
+        if (!reducedMotion()) setTyping({ index: next.length, shown: 0 });
+      } else
         setNotice(
           data.error ?? "The coach couldn't answer just now. Please try again.",
         );
@@ -161,17 +212,40 @@ export default function CoachWidget() {
               <h2>The Coach</h2>
               <p>Rules, strategy and hand reviews.</p>
             </div>
-            <button
-              type="button"
-              className="coach-close"
-              onClick={() => setOpen(false)}
-              aria-label="Close the coach"
-            >
-              <X size={16} />
-            </button>
+            <div className="coach-header-actions">
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  className="coach-close"
+                  onClick={clearChat}
+                  disabled={thinking}
+                  aria-label="Clear the chat"
+                  title="New chat"
+                >
+                  <RotateCcw size={15} />
+                </button>
+              )}
+              <button
+                type="button"
+                className="coach-close"
+                onClick={() => setOpen(false)}
+                aria-label="Close the coach"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </header>
 
-          <div className="coach-messages" ref={listRef} aria-live="polite">
+          <div
+            className="coach-messages"
+            ref={listRef}
+            aria-live="polite"
+            data-lenis-prevent
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 32);
+            }}
+          >
             {messages.length === 0 && (
               <div className="coach-welcome">
                 <p>
@@ -195,10 +269,31 @@ export default function CoachWidget() {
                 </div>
               </div>
             )}
-            {messages.map((m, i) => (
-              <div key={i} className={`coach-message coach-message--${m.role}`}>
-                {m.content}
-                {m.sources && (
+            {messages.map((m, i) => {
+              const isTyping = typing?.index === i;
+              if (m.role === "user")
+                return (
+                  <div key={i} className="coach-message coach-message--user">
+                    {m.content}
+                  </div>
+                );
+              return (
+              <div key={i} className="coach-message coach-message--assistant">
+                {isTyping ? (
+                  <>
+                    {/* Screen readers get the whole reply at once, not every word. */}
+                    <span className="sr-only">{m.content}</span>
+                    <div className="coach-reply" aria-hidden="true">
+                      {formatReply(
+                        hideOpenBold(words(m.content).slice(0, typing.shown).join("")),
+                        <span className="coach-cursor" />,
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="coach-reply">{formatReply(m.content)}</div>
+                )}
+                {m.sources && !isTyping && (
                   <span className="coach-sources">
                     Sources:{" "}
                     {m.sources.map((s, j) => (
@@ -216,20 +311,29 @@ export default function CoachWidget() {
                   </span>
                 )}
               </div>
-            ))}
+              );
+            })}
             {thinking && (
-              <p
-                className="coach-message coach-message--assistant coach-thinking"
-                aria-label="The coach is thinking"
-              >
-                <span>♠</span>
-                <span>♥</span>
-                <span>♦</span>
-                <span>♣</span>
+              <p className="coach-message coach-message--assistant coach-thinking">
+                <LatticeLoader
+                  label="Thinking"
+                  color="#3b0949"
+                  glow
+                  glowColor="#932db9"
+                  pattern="orbit"
+                  cellSize={5}
+                  fontSize={13}
+                  showTimer={false}
+                />
               </p>
             )}
             {notice && <p className="coach-notice">{notice}</p>}
           </div>
+          {!atBottom && (
+            <button type="button" className="coach-jump" onClick={scrollToLatest}>
+              <ArrowDown size={13} /> Latest
+            </button>
+          )}
 
           <form className="coach-form" onSubmit={submit}>
             <label htmlFor="coach-input" className="sr-only">
