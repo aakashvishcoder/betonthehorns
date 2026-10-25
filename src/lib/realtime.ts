@@ -1,5 +1,5 @@
 import * as Ably from "ably";
-import { api } from "@/lib/api";
+import { api, type QueueSnapshot } from "@/lib/api";
 import type { GameModeId } from "@/lib/game-modes";
 
 const INBOX = "inbox";
@@ -85,5 +85,41 @@ export function enterQueuePresence(walletId: string, mode: GameModeId) {
   });
   return () => {
     void channel.presence.leave().catch(() => undefined);
+  };
+}
+
+export function watchGlobalQueue(
+  walletId: string,
+  mode: GameModeId,
+  seats: number,
+  onQueue: (queue: QueueSnapshot) => void,
+) {
+  const channel = getRealtime(walletId).channels.get(`queue:${mode}`);
+  const fromPresence = () => {
+    void channel.presence.get().then((members) => {
+      const wallets = [
+        ...new Set(
+          members
+            .map((member) => member.clientId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      onQueue({ mode, seats, count: wallets.length, wallets });
+    });
+  };
+  channel.presence.subscribe(fromPresence);
+  fromPresence();
+  const stopSnap = subscribeChannel(
+    walletId,
+    `queue:${mode}`,
+    "waiting",
+    (data) => {
+      onQueue(data as QueueSnapshot);
+    },
+    1,
+  );
+  return () => {
+    channel.presence.unsubscribe(fromPresence);
+    stopSnap();
   };
 }

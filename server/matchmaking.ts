@@ -31,7 +31,7 @@ import {
   stepRunout,
   timeoutAct,
 } from "./engine.js";
-import { publish } from "./ably.js";
+import { listQueuePresence, publish } from "./ably.js";
 import { settleMatch } from "./settle.js";
 import { lockMatch } from "./chain.js";
 import {
@@ -108,8 +108,39 @@ export async function getMatch(id: string) {
   return hydrateMatch(id);
 }
 
+function mergeSeats(...lists: QueueSeat[][]) {
+  const seats = new Map<string, number>();
+  for (const list of lists) {
+    for (const seat of list) {
+      if (!seats.has(seat.walletId)) seats.set(seat.walletId, seat.joinedAt);
+    }
+  }
+  return [...seats.entries()]
+    .map(([walletId, joinedAt]) => ({ walletId, joinedAt }))
+    .sort((left, right) => left.joinedAt - right.joinedAt);
+}
+
+export async function pullGlobalQueue(mode: GameMode) {
+  const present = await listQueuePresence(mode);
+  for (const seat of present) {
+    const sitting = await walletMatch(seat.walletId);
+    if (sitting?.status === "playing") continue;
+    if (dbReady) {
+      await enqueueSeat(seat.walletId, mode).catch((error) =>
+        console.warn("[queue] sync", (error as Error).message),
+      );
+    } else if (!queueOf(mode).some((row) => row.walletId === seat.walletId)) {
+      queueOf(mode).push(seat);
+    }
+  }
+  return present;
+}
+
 export async function queueSnapshot(mode: GameMode) {
-  const waiting = dbReady ? await listQueue(mode) : queueOf(mode);
+  const waiting = mergeSeats(
+    dbReady ? await listQueue(mode) : queueOf(mode),
+    await listQueuePresence(mode),
+  );
   return {
     mode,
     seats: MODE_SEATS[mode],
@@ -188,6 +219,7 @@ function leaveAllQueues(walletId: string) {
 }
 
 async function tryMatch(mode: GameMode) {
+  await pullGlobalQueue(mode);
   const need = MODE_SEATS[mode];
   let walletIds: string[];
   if (dbReady) {
@@ -422,6 +454,21 @@ function tick() {
 }
 
 setInterval(tick, 250);
+
+async function matchOpenQueues() {
+  for (const mode of MODES) {
+    try {
+      const started = await tryMatch(mode);
+      if (!started) await publishQueue(mode);
+    } catch (error) {
+      console.warn("[queue]", mode, (error as Error).message);
+    }
+  }
+}
+
+setInterval(() => {
+  void matchOpenQueues();
+}, 2000);
 
 export function listMatches() {
   return [...matches.values()].map((match) => ({
