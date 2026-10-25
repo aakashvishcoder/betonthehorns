@@ -328,6 +328,16 @@ export class SitAndGo {
     if (survivors === 1) this.places.set(this.seats.find(s => !s.out)!.id, 1);
   }
 
+  /** Ends the game between hands: everyone still in is placed by chip count (equal stacks tie). */
+  finishNow() {
+    if (this.street !== "done") throw new Error("hand in progress");
+    const live = this.seats.filter(s => !s.out).sort((a, b) => b.stack - a.stack);
+    live.forEach((s, k) => {
+      const prev = live[k - 1];
+      this.places.set(s.id, prev && prev.stack === s.stack ? this.places.get(prev.id)! : k + 1);
+    });
+  }
+
   /** Winner of an uncontested pot shows their cards (otherwise they stay mucked). */
   show(id: string) {
     const i = this.seatOf(id);

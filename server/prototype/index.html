@@ -92,6 +92,7 @@
         <button id="queueBtn">Queue</button>
         <button id="leaveBtn" class="ghost">Leave queue</button>
         <button id="botsBtn" class="ghost">Fill table with bots</button>
+        <button id="aiBtn" class="ghost">Practice vs AI</button>
         <label class="row" style="gap:6px;color:var(--muted)"><input type="checkbox" id="practice"> Practice (unranked)</label>
       </div>
       <div id="status"></div>
@@ -170,7 +171,12 @@ async function loadWallet() {
 const wallet = await loadWallet();
 const state = { mode: "heads_up", queued: null, tableId: null, view: null, clock: null, clockAt: 0, ratingsAtSeat: null, lastLogLen: 0, records: [] };
 $("me").textContent = `You: ${short(wallet.address)}`;
-const name = id => id === wallet.address ? "You" : short(id);
+const AI_NAMES = { shark: "The Shark", maniac: "The Maniac", rock: "The Rock" };
+const name = id => {
+  if (id === wallet.address) return "You";
+  if (id.startsWith("ai:")) { const [, p, n] = id.split(":"); return AI_NAMES[p] + (n !== "1" ? ` ${n}` : ""); }
+  return short(id);
+};
 
 // --- Socket ---
 const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
@@ -209,6 +215,7 @@ renderModes();
 const practice = () => $("practice").checked;
 $("queueBtn").onclick = () => send({ type: "queue", mode: state.mode, practice: practice() });
 $("leaveBtn").onclick = () => send({ type: "leave_queue" });
+$("aiBtn").onclick = () => { send({ type: "practice_ai", mode: state.mode }); setStatus("Seating AI opponents…"); };
 $("botsBtn").onclick = async () => {
   if (state.queued !== state.mode) send({ type: "queue", mode: state.mode, practice: practice() });
   const s = await fetchState();

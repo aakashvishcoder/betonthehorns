@@ -1,11 +1,14 @@
 // Runs the game server against the deployed horns_elo program, plus the AI coach endpoint.
 //   npm start
 // Env (server/.env is loaded automatically): PORT (8787), SOLANA_RPC (devnet),
-// SERVER_KEYPAIR (~/.config/solana/horns-elo-server.json), MODEL_API_KEY (Muse coach)
+// SERVER_KEYPAIR (~/.config/solana/horns-elo-server.json), MODEL_API_KEY (Muse coach),
+// SNOWFLAKE_ACCOUNT + SNOWFLAKE_PAT (AI practice opponents and style data)
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { Connection, Keypair, clusterApiUrl } from "@solana/web3.js";
+import { snowflakeAuthFromEnv } from "./ai/cortex.ts";
+import { MemoryStyleStore, SnowflakeStyleStore } from "./ai/style-store.ts";
 import { coachHandler } from "./coach.ts";
 import { startGameServer } from "./server.ts";
 import { SolanaChain } from "./solana-chain.ts";
@@ -21,7 +24,15 @@ const http = createServer((req, res) => {
   if (req.url === "/api/coach") return void coach(req, res);
   res.writeHead(404).end();
 });
-const game = startGameServer({ server: http, chain: new SolanaChain(new Connection(rpc, "confirmed"), server), log });
+const snowflake = snowflakeAuthFromEnv();
+const game = startGameServer({
+  server: http,
+  chain: new SolanaChain(new Connection(rpc, "confirmed"), server),
+  styleStore: snowflake ? new SnowflakeStyleStore(snowflake) : new MemoryStyleStore(),
+  ai: { auth: snowflake },
+  log,
+});
 http.listen(port);
 console.log(`Game server on ws://localhost:${port} (result authority ${server.publicKey.toBase58()}, ${rpc})`);
 console.log(`Coach: ${process.env.MODEL_API_KEY ? "on" : "off (set MODEL_API_KEY in server/.env)"}`);
+console.log(`AI opponents: ${snowflake ? "Snowflake Cortex + style data" : "rules only (set SNOWFLAKE_ACCOUNT and SNOWFLAKE_PAT in server/.env)"}`);

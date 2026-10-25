@@ -1,4 +1,5 @@
-import { SitAndGo, type Action } from "./game.ts";
+import { aiName, isAi } from "./ai/personas.ts";
+import { SitAndGo, type Action, type Street } from "./game.ts";
 import type { Mode } from "./matchmaker.ts";
 
 export const TIMING = {
@@ -10,12 +11,16 @@ export const TIMING = {
 };
 
 /** Short wallet label for the table log, e.g. "8Kx3…2Fa9". */
-export const shortName = (id: string) => `${id.slice(0, 4)}…${id.slice(-4)}`;
+export const shortName = (id: string) => (isAi(id) ? aiName(id) : `${id.slice(0, 4)}…${id.slice(-4)}`);
 
 export type TableEvents = {
   /** Something changed; push fresh views to players and spectators. */
   update(): void;
   finished(places: Map<string, number>): void;
+  /** Optional hooks for style tracking. */
+  handStarted?(players: string[]): void;
+  action?(player: string, action: Action, street: Street): void;
+  handEnded?(): void;
 };
 
 /**
@@ -58,7 +63,9 @@ export class TableRunner {
     const overrun = Date.now() - this.turnStartedAt - TIMING.turnMs;
     const { toCall } = this.game.legal(player);
     const handBefore = this.game.handNo;
+    const street = this.game.street;
     this.game.act(player, action);
+    this.events.action?.(player, action, street);
     if (overrun > 0) this.timeBank.set(player, Math.max(0, this.timeBank.get(player)! - overrun));
     const verb =
       action.type === "fold" ? "folds" : action.type === "check" ? "checks" : action.type === "call" ? `calls ${toCall}` : `raises to ${action.to}`;
@@ -80,6 +87,7 @@ export class TableRunner {
 
   private startHand() {
     this.game.startHand(Date.now());
+    this.events.handStarted?.(this.game.seats.filter(s => !s.out).map(s => s.id));
     const [sb, bb] = this.game.view().blinds;
     this.note(`— Hand #${this.game.handNo} · blinds ${sb}/${bb} · ${shortName(this.game.seats[this.game.button]!.id)} has the button`);
     // Blinds alone can put everyone all in; the hand then runs out with no actions.
@@ -88,6 +96,7 @@ export class TableRunner {
   }
 
   private noteResults() {
+    this.events.handEnded?.();
     if (this.game.board.length) this.note(`Board: ${this.game.board.join(" ")}`);
     for (const s of this.game.seats) if (s.shown && !s.folded && !s.out) this.note(`${shortName(s.id)} shows ${s.cards.join(" ")}`);
     for (const pot of this.game.lastResult) {
@@ -126,6 +135,17 @@ export class TableRunner {
     clearTimeout(this.timer);
   }
 
+  /** Ends the game now (between hands); places the rest by chips. Used when no human is left vs AIs. */
+  finishNow() {
+    if (this.game.street !== "done" || this.game.finished) return false;
+    this.game.finishNow();
+    this.note("— Game ended: no human players left; remaining places by chip count");
+    this.close();
+    this.events.update();
+    this.events.finished(this.game.places);
+    return true;
+  }
+
   private autoAct(player: string) {
     const legal = this.game.legal(player);
     this.act(player, legal.canCheck ? { type: "check" } : { type: "fold" }, this.connected.has(player) ? " (timed out)" : " (away)");
@@ -135,6 +155,7 @@ export class TableRunner {
     clearTimeout(this.timer);
     if (this.closed) return;
     this.events.update();
+    if (this.closed) return; // an update hook may end the game
 
     if (this.game.street === "done") {
       if (this.game.finished) return this.events.finished(this.game.places);

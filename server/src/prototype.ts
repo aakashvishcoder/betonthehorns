@@ -6,11 +6,16 @@ import { readFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { runBot } from "./bot.ts";
 import { MemoryChain } from "./chain.ts";
+import { snowflakeAuthFromEnv } from "./ai/cortex.ts";
+import { MemoryStyleStore, SnowflakeStyleStore } from "./ai/style-store.ts";
 import { coachHandler } from "./coach.ts";
 import { MODES, type Mode } from "./matchmaker.ts";
 import { startGameServer } from "./server.ts";
 
-export function startPrototype(port: number, options: { botThinkMs?: number; log?: (msg: string) => void } = {}) {
+export function startPrototype(
+  port: number,
+  options: { botThinkMs?: number; log?: (msg: string) => void; ai?: import("./server.ts").AiOptions } = {},
+) {
   const chain = new MemoryChain({ autoRegister: true });
   const page = new URL("../prototype/index.html", import.meta.url);
 
@@ -53,7 +58,15 @@ export function startPrototype(port: number, options: { botThinkMs?: number; log
     }
   });
 
-  const game = startGameServer({ server: http, chain, log: options.log });
+  // AI opponents use Snowflake Cortex when SNOWFLAKE_ACCOUNT/SNOWFLAKE_PAT are set, else the rule engine.
+  const snowflake = options.ai ? options.ai.auth : snowflakeAuthFromEnv();
+  const game = startGameServer({
+    server: http,
+    chain,
+    styleStore: snowflake && !options.ai ? new SnowflakeStyleStore(snowflake) : new MemoryStyleStore(),
+    ai: options.ai ?? { auth: snowflake },
+    log: options.log,
+  });
   http.listen(port);
   return {
     chain,
@@ -69,4 +82,5 @@ if (import.meta.main) {
   const port = Number(process.env.PORT ?? 8080);
   startPrototype(port, { log: msg => console.log(new Date().toISOString(), msg) });
   console.log(`Prototype running: open http://localhost:${port} in a few tabs (no Solana; wallets are throwaway keys).`);
+  console.log(`AI opponents: ${snowflakeAuthFromEnv() ? "Snowflake Cortex" : "rules only (no SNOWFLAKE_ACCOUNT/SNOWFLAKE_PAT)"}`);
 }
