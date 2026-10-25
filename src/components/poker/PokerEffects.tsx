@@ -21,7 +21,7 @@ const InfiniteSpiral = lazy(
 export const pokerCardArt = {
   ace: "/cards/ace-spades.webp",
   king: "/cards/king-hearts.webp",
-  back: "/cards/allin-card-back.webp",
+  back: "/cards/horns-card-back.webp",
 };
 
 const cardTextures = [

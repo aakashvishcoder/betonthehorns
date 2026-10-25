@@ -1,55 +1,81 @@
-import { type CSSProperties, type FormEvent, useMemo, useState } from "react";
+import { lazy, Suspense, type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Eye, EyeOff, MessageCircle } from "lucide-react";
-import { Link } from "wouter";
-import PokerAppShell from "@/components/poker-app/PokerAppShell";
-import { Avatar, DeckCard } from "@/components/poker-app/PokerUI";
+import { Link, useRoute } from "wouter";
+import PokerAppShell, { usePokerMotion } from "@/components/poker-app/PokerAppShell";
+import { Avatar } from "@/components/poker-app/PokerUI";
+import {
+  api,
+  type ChatMessage,
+  type LegalActions,
+  type PrivateView,
+  type PublicMatch,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
-import {
-  demoPlayers,
-  demoPlayerFromAddress,
-  formatChips,
-  type DeckCode,
-} from "@/lib/poker-design";
+import { cardArt, cardName, deckArt, formatChips } from "@/lib/poker-design";
+import { subscribeChannel } from "@/lib/realtime";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/table.css";
 
-type Seat = {
-  name: string;
-  stack: number;
-  tone: "violet" | "maroon" | "neutral";
-  bet?: number;
-  last?: string;
-  folded?: boolean;
-  me?: boolean;
-} | null;
+const HoloCard = lazy(() => import("@/components/react-bits/HoloCard"));
 
 const tones = ["violet", "maroon", "neutral"] as const;
 
-function seatsForMode(seatCount: number, youName: string): Seat[] {
-  const opponents = demoPlayers.slice(0, seatCount - 1);
-  return [
-    { name: youName, stack: 2450, tone: "violet", me: true },
-    ...opponents.map((player, index) => ({
-      name: player.name,
-      stack: 980 + index * 220,
-      tone: tones[(index + 1) % tones.length],
-      last: index === 0 ? "Fold" : index === 1 ? "Call" : "Check",
-      folded: index === 0,
-      bet: index === 1 ? 40 : undefined,
-    })),
-  ];
-}
-const flop: DeckCode[] = ["QC", "JC", "TC"];
-const potBeforeStreet = 240;
-const toCall = 40;
-
-// Same three chip styles as the landing page (.poker-chip in index.css).
 const chipDenominations = [
   { value: 25, variant: "chip-ivory" },
   { value: 100, variant: "chip-red" },
   { value: 500, variant: "" },
 ] as const;
+
+function LiveCard({
+  code,
+  faceDown = false,
+  delay = 0,
+  win = false,
+  feature = false,
+}: {
+  code?: string | null;
+  faceDown?: boolean;
+  delay?: number;
+  win?: boolean;
+  feature?: boolean;
+}) {
+  const { paused } = usePokerMotion();
+  const hidden = faceDown || !code || code === "BACK";
+  const red = !hidden && (code?.[1] === "H" || code?.[1] === "D");
+  const face = hidden ? deckArt.BACK : cardArt(code ?? "BACK");
+  return (
+    <div
+      className={`horn-card ${win ? "is-win" : ""}`}
+      style={{ "--deal-delay": `${delay}ms` } as CSSProperties}
+    >
+      {hidden ? (
+        <img className="horn-card-face" src={deckArt.BACK} alt="" />
+      ) : (
+        <Suspense fallback={<img className="horn-card-face" src={face} alt="" />}>
+          <HoloCard
+            image={face}
+            alt={cardName(code ?? "")}
+            preset={red ? "stars" : "shards"}
+            foilColor={red ? "#e98392" : "#e1b0f7"}
+            intensity={0.2}
+            edgeSparkle={0.26}
+            glare={0.16}
+            tiltMax={feature ? 7 : 0}
+            hoverScale={feature ? 1.02 : 1}
+            width={feature ? 180 : 84}
+            radius={10}
+            frame={3}
+            idle={false}
+            paused={paused}
+            shadow={false}
+            style={{ "--hc-w": "100%" } as CSSProperties}
+          />
+        </Suspense>
+      )}
+    </div>
+  );
+}
 
 function seatPosition(index: number, count: number) {
   const angle = ((90 + index * (360 / count)) * Math.PI) / 180;
@@ -75,62 +101,151 @@ function Chip({
   );
 }
 
-export default function TablePage() {
-  const { address, displayAddress } = useAuth();
-  const requested =
-    new URLSearchParams(window.location.search).get("mode") ?? "hands-up";
-  const mode = getGameMode(isGameModeId(requested) ? requested : "hands-up");
-  const you = address
-    ? demoPlayerFromAddress(address)
-    : { name: displayAddress ?? "You" };
-  const seats = useMemo(
-    () => seatsForMode(mode.seats, you.name || shortAddress(address ?? "You")),
-    [mode.seats, you.name, address],
-  );
-  const me = seats[0]!;
-  const dealerSeat = 1;
-  const totalPot =
-    potBeforeStreet + seats.reduce((sum, seat) => sum + (seat?.bet ?? 0), 0);
-  const minRaise = toCall * 2;
+const idleLegal: LegalActions = {
+  canAct: false,
+  toCall: 0,
+  canCheck: false,
+  canFold: false,
+  canCall: false,
+  minRaiseTo: 0,
+  maxRaiseTo: 0,
+};
 
+export default function TablePage() {
+  const [, params] = useRoute<{ matchId: string }>("/table/:matchId");
+  const matchId = params?.matchId ?? "";
+  const { address, displayAddress } = useAuth();
+  const [match, setMatch] = useState<PublicMatch | null>(null);
+  const [you, setYou] = useState<PrivateView | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [raising, setRaising] = useState(false);
-  const [raiseTo, setRaiseTo] = useState(minRaise);
-  const [myAction, setMyAction] = useState<string | null>(null);
+  const [raiseTo, setRaiseTo] = useState(0);
   const [hideCards, setHideCards] = useState(false);
   const [showChat, setShowChat] = useState(true);
   const [draftMessage, setDraftMessage] = useState("");
-  const [messages, setMessages] = useState([
-    { name: "Sam", text: "one more hand?" },
-    { name: "River", text: "That flop has opinions." },
-  ]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!matchId || !address) return;
+    let cancelled = false;
+
+    void api
+      .match(matchId, address)
+      .then((payload) => {
+        if (cancelled) return;
+        setMatch(payload.match);
+        setYou(payload.you);
+        setMessages(payload.chat);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+
+    const applyState = (data: unknown) => {
+      const payload = data as {
+        match?: PublicMatch;
+        you?: PrivateView;
+        id?: string;
+      };
+      if (payload.match) {
+        setMatch(payload.match);
+        if (payload.you) setYou(payload.you);
+        return;
+      }
+      if (payload.id) setMatch(payload as PublicMatch);
+    };
+
+    const stopTable = subscribeChannel(address, `table:${matchId}`, "state", applyState);
+    const stopMatched = subscribeChannel(address, `table:${matchId}`, "matched", applyState);
+    const stopWallet = subscribeChannel(address, `wallet:${address}`, "state", applyState);
+    const stopChat = subscribeChannel(address, `table:${matchId}`, "chat", (data) => {
+      setMessages((current) => [...current, data as ChatMessage]);
+    });
+
+    return () => {
+      cancelled = true;
+      stopTable();
+      stopMatched();
+      stopWallet();
+      stopChat();
+    };
+  }, [address, matchId]);
+
+  const mode = getGameMode(
+    match && isGameModeId(match.mode) ? match.mode : "hands-up",
+  );
+  const seats = match?.players ?? [];
+  const me = seats.find((player) => player.walletId === address);
+  const legal = you?.legal ?? idleLegal;
+  const myHole = you?.hole ?? me?.hole ?? [];
+  const minRaise = legal.minRaiseTo || match?.blinds.bb || 20;
+  const maxRaise = legal.maxRaiseTo || me?.stack || 0;
+
+  useEffect(() => {
+    setRaiseTo(minRaise);
+    setRaising(false);
+  }, [match?.handNumber, match?.street, match?.actionIndex, minRaise]);
+
+  const boardSlots = useMemo(() => {
+    const cards = match?.board ?? [];
+    return [...cards, ...Array.from({ length: Math.max(0, 5 - cards.length) }, () => null)];
+  }, [match?.board]);
+  const winners = useMemo(() => {
+    if (!match) return new Set<string>();
+    if (match.street !== "showdown" && match.street !== "complete" && match.status !== "finished") {
+      return new Set<string>();
+    }
+    return new Set(match.winners.filter((winner) => winner.amount > 0).map((winner) => winner.walletId));
+  }, [match]);
 
   const clampRaise = (value: number) =>
-    Math.min(me.stack, Math.max(minRaise, Math.round(value)));
+    Math.min(maxRaise, Math.max(minRaise, Math.round(value)));
+  const totalPot = match?.pot ?? 0;
   const presets = [
     { label: "Min", value: minRaise },
-    { label: "½ Pot", value: totalPot / 2 },
-    { label: "¾ Pot", value: (totalPot * 3) / 4 },
-    { label: "Pot", value: totalPot },
-    { label: "All in", value: me.stack },
+    { label: "½ Pot", value: minRaise + totalPot / 2 },
+    { label: "¾ Pot", value: minRaise + (totalPot * 3) / 4 },
+    { label: "Pot", value: minRaise + totalPot },
+    { label: "All in", value: maxRaise },
   ];
 
-  function act(label: string) {
-    setMyAction(label);
-    setRaising(false);
+  async function act(type: "fold" | "check" | "call" | "raise", amount?: number) {
+    if (!address || !matchId || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.action(matchId, address, type, amount);
+      setMatch(result.match);
+      setYou(result.you);
+      setRaising(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   function addChip(value: number) {
-    setRaiseTo((current) => clampRaise((raising ? current : 0) + value));
+    setRaiseTo((current) => clampRaise((raising ? current : minRaise) + value));
     setRaising(true);
   }
 
-  function submitMessage(event: FormEvent<HTMLFormElement>) {
+  async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draftMessage.trim();
-    if (!text) return;
-    setMessages((current) => [...current, { name: me.name, text }]);
+    if (!text || !address) return;
     setDraftMessage("");
+    try {
+      const result = await api.chat(matchId, address, text);
+      setMessages(result.messages);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
+
+  const myTurn = legal.canAct;
+  const streetLabel = match?.street ?? "dealing";
 
   return (
     <PokerAppShell section="table">
@@ -142,7 +257,8 @@ export default function TablePage() {
           <div className="felt-room-name">
             <h1 id="felt-room-title">{mode.label}</h1>
             <span>
-              NLH · {mode.seats} seats · {mode.escrow} ELO escrowed · demo
+              NLH · {mode.seats} seats · blinds {match?.blinds.sb ?? 10}/
+              {match?.blinds.bb ?? 20} · hand {match?.handNumber ?? 0} · {streetLabel}
             </span>
           </div>
           <div className="felt-topbar-actions">
@@ -167,97 +283,105 @@ export default function TablePage() {
         </header>
 
         <div className="felt-stage-row">
-          <div
-            className="felt-stage"
-            aria-label={`${mode.label} table, flop dealt`}
-          >
+          <div className="felt-stage" aria-label={`${mode.label} table, ${streetLabel}`}>
             <div className="felt-oval" aria-hidden="true" />
 
             <div className="felt-center">
-              <div className="felt-pot">
-                <span>
-                  Pot <strong>{formatChips(potBeforeStreet)}</strong>
-                </span>
-                <small>Total {formatChips(totalPot)}</small>
+              <div className="felt-pot-row">
+                {totalPot > 0 && (
+                  <span className="felt-chip-stack" aria-hidden="true">
+                    <Chip variant="chip-ivory" className="felt-chip-mini" />
+                    {totalPot >= 40 && (
+                      <Chip variant="chip-red" className="felt-chip-mini" />
+                    )}
+                    {totalPot >= 120 && <Chip className="felt-chip-mini" />}
+                  </span>
+                )}
+                <div className="felt-pot">
+                  <span>
+                    Pot <strong>{formatChips(totalPot)}</strong>
+                  </span>
+                  <small>
+                    {match?.status === "finished"
+                      ? "Table complete"
+                      : `${streetLabel} · ${match?.blinds.sb}/${match?.blinds.bb}`}
+                  </small>
+                </div>
               </div>
-              <div
-                className="felt-board"
-                aria-label="Flop: queen, jack and ten of clubs. Turn and river not dealt."
-              >
-                {flop.map((card) => (
-                  <DeckCard
-                    key={card}
-                    card={card}
-                    width={64}
-                    foil={true}
-                    interactive={false}
-                  />
-                ))}
-                <span className="felt-board-slot" aria-hidden="true" />
-                <span className="felt-board-slot" aria-hidden="true" />
+              <div className="felt-board" aria-label="Community cards">
+                {boardSlots.map((card, index) =>
+                  card ? (
+                    <LiveCard
+                      key={`${match?.handNumber ?? 0}-board-${index}-${card}`}
+                      code={card}
+                      delay={index * 90}
+                      feature
+                    />
+                  ) : (
+                    <span key={`slot-${index}`} className="felt-board-slot" aria-hidden="true" />
+                  ),
+                )}
               </div>
             </div>
 
             {seats.map((seat, index) => {
               const style = seatPosition(index, seats.length);
-              if (!seat)
-                return (
-                  <button
-                    type="button"
-                    key={index}
-                    className="felt-seat felt-seat--open"
-                    style={style}
-                  >
-                    Sit here
-                  </button>
-                );
-              const label = seat.me ? myAction : seat.last;
-              const folded = seat.folded || (seat.me && myAction === "Fold");
+              const mine = seat.walletId === address;
+              const name = seat.name || (mine ? displayAddress ?? shortAddress(seat.walletId) : shortAddress(seat.walletId));
+              const acting = match?.actionIndex === index;
               return (
-                <div key={seat.name}>
+                <div key={seat.walletId}>
                   <div
-                    className={`felt-seat ${seat.me ? "is-me is-acting" : ""} ${folded ? "is-folded" : ""}`}
+                    className={`felt-seat ${mine ? "is-me" : ""} ${acting ? "is-acting" : ""} ${seat.folded || seat.busted ? "is-folded" : ""}`}
                     style={style}
                   >
-                    {!folded && (
+                    {!seat.folded && seat.hole && (
                       <div className="felt-seat-cards">
-                        {seat.me && !hideCards ? (
-                          <>
-                            <DeckCard card="AS" width={40} />
-                            <DeckCard card="KH" width={40} />
-                          </>
-                        ) : (
-                          <>
-                            <DeckCard card="BACK" width={40} />
-                            <DeckCard card="BACK" width={40} />
-                          </>
-                        )}
+                        {seat.hole.map((card, cardIndex) => (
+                          <LiveCard
+                            key={`${match?.handNumber ?? 0}-${seat.walletId}-${cardIndex}-${card}`}
+                            code={card}
+                            delay={cardIndex * 120}
+                            faceDown={mine && hideCards}
+                            win={winners.has(seat.walletId)}
+                          />
+                        ))}
                       </div>
                     )}
                     <div className="felt-seat-box">
-                      <Avatar name={seat.name} size={30} tone={seat.tone} />
+                      <Avatar
+                        name={name}
+                        size={30}
+                        tone={tones[index % tones.length]}
+                      />
                       <div>
-                        <strong>{seat.name}</strong>
+                        <strong>{name}</strong>
                         <span>{formatChips(seat.stack)}</span>
                       </div>
-                      {label && <em className="felt-seat-tag">{label}</em>}
+                      {seat.lastAction && <em className="felt-seat-tag">{seat.lastAction}</em>}
                     </div>
-                    {seat.me && !myAction && (
-                      <i className="felt-timer" aria-hidden="true" />
-                    )}
+                    {acting && <i className="felt-timer" aria-hidden="true" />}
                   </div>
-                  {seat.bet && (
+                  {seat.bet > 0 && (
                     <div className="felt-bet" style={style}>
-                      <Chip className="felt-chip-mini" />
+                      <span className="felt-chip-stack">
+                        <Chip
+                          className="felt-chip-mini"
+                          variant={
+                            seat.bet >= 100
+                              ? "chip-red"
+                              : seat.bet >= 40
+                                ? ""
+                                : "chip-ivory"
+                          }
+                        />
+                        {seat.bet >= 80 && <Chip className="felt-chip-mini" />}
+                      </span>
                       {formatChips(seat.bet)}
                     </div>
                   )}
-                  {index === dealerSeat && (
-                    <span
-                      className="felt-dealer"
-                      style={style}
-                      aria-label={`${seat.name} is the dealer`}
-                    >
+                  {index === match?.dealerIndex && (
+                    <span className="felt-dealer" style={style} aria-label={`${name} is the dealer`}>
                       D
                     </span>
                   )}
@@ -268,13 +392,14 @@ export default function TablePage() {
 
           <aside className="felt-chip-rail" aria-label="Chip tray">
             <span className="felt-rail-label">Your stack</span>
-            <strong className="felt-rail-stack">{formatChips(me.stack)}</strong>
+            <strong className="felt-rail-stack">{formatChips(me?.stack ?? 0)}</strong>
             {chipDenominations.map(({ value, variant }) => (
               <button
                 type="button"
                 key={value}
                 className="felt-rail-chip"
                 onClick={() => addChip(value)}
+                disabled={!myTurn}
                 aria-label={`Add ${value} to your raise`}
               >
                 <Chip label={String(value)} variant={variant} />
@@ -290,36 +415,34 @@ export default function TablePage() {
           </aside>
         </div>
 
-        <div
-          className={`felt-bottom ${showChat ? "" : "felt-bottom--no-chat"}`}
-        >
+        <div className={`felt-bottom ${showChat ? "" : "felt-bottom--no-chat"}`}>
           <div className="felt-my-hand">
             <div className="felt-my-cards">
-              <DeckCard
-                card="AS"
-                width={76}
-                foil={true}
-                faceDown={hideCards}
-                interactive={true}
-                label="Your ace of spades"
-              />
-              <DeckCard
-                card="KH"
-                width={76}
-                foil={true}
-                faceDown={hideCards}
-                interactive={true}
-                label="Your king of hearts"
-              />
+              {(myHole.length ? myHole : ["BACK", "BACK"]).map((card, index) => (
+                <LiveCard
+                  key={`${match?.handNumber ?? 0}-me-${index}-${card}`}
+                  code={card}
+                  delay={index * 140}
+                  faceDown={hideCards}
+                  win={Boolean(address && winners.has(address))}
+                  feature
+                />
+              ))}
             </div>
-            <span>{hideCards ? "Cards hidden" : "Straight, ace high"}</span>
+            <p className="felt-hand-read">
+              <span>Best hand</span>
+              <strong>
+                {you?.handName ||
+                  (match?.status === "finished" ? "Table over" : "Waiting for cards")}
+              </strong>
+            </p>
           </div>
 
           {showChat && (
             <div className="felt-chat">
               <ul>
                 {messages.map((message, index) => (
-                  <li key={`${message.name}-${index}`}>
+                  <li key={`${message.name}-${message.at}-${index}`}>
                     <strong>{message.name}</strong> {message.text}
                   </li>
                 ))}
@@ -339,7 +462,13 @@ export default function TablePage() {
           )}
 
           <div className="felt-actions" aria-label="Your action">
-            {raising ? (
+            {match?.status === "finished" ? (
+              <div className="felt-action-buttons">
+                <Link href="/play" className="club-button">
+                  Back to dashboard
+                </Link>
+              </div>
+            ) : raising ? (
               <>
                 <div className="felt-presets">
                   {presets.map((preset) => (
@@ -357,7 +486,7 @@ export default function TablePage() {
                   <input
                     type="range"
                     min={minRaise}
-                    max={me.stack}
+                    max={Math.max(minRaise, maxRaise)}
                     step={10}
                     value={raiseTo}
                     onChange={(event) => setRaiseTo(Number(event.target.value))}
@@ -366,7 +495,7 @@ export default function TablePage() {
                   <input
                     type="number"
                     min={minRaise}
-                    max={me.stack}
+                    max={maxRaise}
                     value={raiseTo}
                     onChange={(event) => setRaiseTo(Number(event.target.value))}
                     onBlur={() => setRaiseTo(clampRaise(raiseTo))}
@@ -384,7 +513,8 @@ export default function TablePage() {
                   <button
                     type="button"
                     className="club-button"
-                    onClick={() => act(`Raise ${formatChips(raiseTo)}`)}
+                    disabled={!myTurn || busy}
+                    onClick={() => void act("raise", clampRaise(raiseTo))}
                   >
                     Raise to {formatChips(raiseTo)}
                   </button>
@@ -395,20 +525,23 @@ export default function TablePage() {
                 <button
                   type="button"
                   className="club-button club-button--ghost"
-                  onClick={() => act("Fold")}
+                  disabled={!myTurn || busy}
+                  onClick={() => void act("fold")}
                 >
                   Fold
                 </button>
                 <button
                   type="button"
                   className="club-button club-button--secondary"
-                  onClick={() => act(`Call ${toCall}`)}
+                  disabled={!myTurn || busy}
+                  onClick={() => void act(legal.canCheck ? "check" : "call")}
                 >
-                  Call {toCall}
+                  {legal.canCheck ? "Check" : `Call ${legal.toCall}`}
                 </button>
                 <button
                   type="button"
                   className="club-button"
+                  disabled={!myTurn || busy || maxRaise < minRaise}
                   onClick={() => setRaising(true)}
                 >
                   Raise
@@ -416,9 +549,16 @@ export default function TablePage() {
               </div>
             )}
             <p aria-live="polite">
-              {myAction
-                ? `You: ${myAction} · demo table, ELO escrow not live`
-                : `Your turn · ${toCall} to call`}
+              {error
+                ? error
+                : match?.status === "finished"
+                  ? `Winner ${
+                      match.players.find((player) => player.walletId === match.winners[0]?.walletId)
+                        ?.name ?? shortAddress(match.winners[0]?.walletId ?? "—")
+                    } · ELO escrow still on Solana`
+                  : myTurn
+                    ? `Your turn · ${legal.toCall ? `${legal.toCall} to call` : "you can check"}`
+                    : `Waiting · ${streetLabel}`}
             </p>
           </div>
         </div>

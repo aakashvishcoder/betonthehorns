@@ -74,6 +74,41 @@
   align-items: center;
   gap: 8px;
 }
+.profile-name-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.profile-name-form label {
+  color: #d081f1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.profile-name-form div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.profile-name-form input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #5e206f;
+  border-radius: 8px;
+  background: #0d0b10;
+  color: #fbf5fe;
+  font: inherit;
+}
+.profile-name-form p {
+  margin: 0;
+  color: #a79aae;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.profile-name-error {
+  color: #e98392;
+}
 .profile-name-line h2,
 .profile-featured-content h2,
 .profile-history-heading h2 {
