@@ -365,7 +365,7 @@ async function tryMatch(mode: GameMode, pinned: string[] = []) {
 
 /** Practice vs AI: an unranked table right away, AI personas in the other seats. */
 export async function startPractice(walletId: string, mode: GameMode) {
-  const existing = walletMatch(walletId);
+  const existing = await walletMatch(walletId);
   if (existing && existing.status === "playing") return { matchId: existing.id };
   if (existing) byWallet.delete(walletId);
   if (!takePracticeGame(walletId)) {

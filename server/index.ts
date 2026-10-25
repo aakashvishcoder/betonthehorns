@@ -78,8 +78,8 @@ const serpKey = process.env.SERPAPI_KEY;
 const coach = coachHandler({
   apiKey: process.env.MODEL_API_KEY,
   walletOf: (req) => sessionWallet(req as express.Request),
-  inRankedGame: (wallet) => {
-    const match = walletMatch(wallet);
+  inRankedGame: async (wallet) => {
+    const match = await walletMatch(wallet);
     return match?.status === "playing" && match.ranked;
   },
   search: serpKey ? new CoachSearch(serpKey) : undefined,
@@ -325,8 +325,8 @@ app.get("/api/match/active/:walletId", async (req, res) => {
 });
 
 app.get("/api/match/:id", async (req, res) => {
-  const walletId = readWallet(req);
-  const view = await getMatchView(req.params.id, isWalletId(walletId) ? walletId : undefined);
+  // Hole cards only for the signed-in player; anyone else gets the public view.
+  const view = await getMatchView(req.params.id, sessionWallet(req) ?? undefined);
   if (!view) {
     res.status(404).json({ error: "Match not found" });
     return;

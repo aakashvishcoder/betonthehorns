@@ -33,7 +33,7 @@ export async function settleMatch(match: MatchState) {
     }
   });
 
-  let locks = new Map<string, number>();
+  let locks: Awaited<ReturnType<typeof escrowLocks>> = new Map();
   let elos = new Map(humans.map((player) => [player.walletId, STARTING_ELO]));
   try {
     locks = await escrowLocks(match.id);

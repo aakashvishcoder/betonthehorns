@@ -185,7 +185,7 @@ export type CoachHandlerOptions = {
   /** Per-browser daily limit; null turns it off. */
   cap?: DailyCap | null;
   /** True if this wallet is seated at a ranked table (coach is off there). */
-  inRankedGame?: (wallet: string) => boolean;
+  inRankedGame?: (wallet: string) => boolean | Promise<boolean>;
   /** The signed-in wallet for this request, if the host server has sessions (preferred over body.wallet). */
   walletOf?: (req: IncomingMessage) => string | null;
   /** Web search tool (SerpApi); omit to answer from the model's knowledge only. */
@@ -219,7 +219,7 @@ export function coachHandler({ apiKey, cap = COACH.dailyCap === null ? null : ne
     const history = cleanHistory(body.messages);
     if (!browserId || !history) return json(res, 400, { error: "Bad request." });
     const wallet = walletOf ? walletOf(req) : typeof body.wallet === "string" ? body.wallet : null;
-    if (wallet && inRankedGame(wallet)) {
+    if (wallet && (await inRankedGame(wallet))) {
       return json(res, 403, { error: "The coach is off during ranked games. Good luck!" });
     }
     if (cap && !cap.take(browserId)) return json(res, 429, { error: "You've used today's coach questions. Come back tomorrow!", remaining: 0 });
