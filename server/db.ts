@@ -21,19 +21,30 @@ export function getPool() {
 }
 
 /**
- * Runs `fn` while holding a Postgres advisory lock, so only one server instance at a time runs
- * the schema setup. (On Vercel several instances start together; racing DROP/CREATE TRIGGER
- * made one fail and fall back to in-memory games.)
+ * Runs the schema setup in one server instance at a time. (On Vercel several instances start
+ * together; racing DROP/CREATE TRIGGER made one fail and fall back to in-memory games.)
+ * The lock is transaction-scoped and never waited on: an instance frozen while holding it loses
+ * it after 10s (idle_in_transaction_session_timeout); the others don't block, they wait up to
+ * ~12s for `done()` and then carry on (the tables already exist).
  */
-export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
+export async function withMigrationLock(fn: () => Promise<void>, done: () => Promise<boolean>) {
   const client = await getPool().connect();
   try {
-    await client.query("SELECT pg_advisory_lock(424242)");
-    return await fn();
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ got: boolean }>("SELECT pg_try_advisory_xact_lock(424242) AS got");
+    if (rows[0]?.got) {
+      await fn();
+      await client.query("COMMIT");
+      return;
+    }
+    await client.query("ROLLBACK");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
   } finally {
-    await client.query("SELECT pg_advisory_unlock(424242)").catch(() => undefined);
     client.release();
   }
+  for (let i = 0; i < 24 && !(await done()); i++) await new Promise((r) => setTimeout(r, 500));
 }
 
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(

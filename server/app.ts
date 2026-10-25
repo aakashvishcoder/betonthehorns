@@ -92,7 +92,6 @@ export function ensureReady() {
       // The schema is set up once per version: instances that find it current skip straight
       // in; otherwise one instance at a time runs the setup (instances start together on Vercel).
       const setup = async () => {
-        if (await schemaIsCurrent()) return;
         await migrate();
         if (dbReady) {
           await migrateSeats().catch((error) => console.warn("[db] seats", (error as Error).message));
@@ -102,11 +101,13 @@ export function ensureReady() {
         }
       };
       if (await schemaIsCurrent()) markDbReady();
-      else
-        await withMigrationLock(setup).catch(async (error) => {
-          console.warn("[db] migration lock", (error as Error).message);
-          await setup();
-        });
+      else {
+        await withMigrationLock(setup, schemaIsCurrent).catch((error) =>
+          console.warn("[db] schema setup", (error as Error).message),
+        );
+        // Another instance did (or is doing) the setup: use the database as long as it answers.
+        if (!dbReady && (await query("SELECT 1").then(() => true, () => false))) markDbReady();
+      }
       await hydrateLiveMatches();
       void refundOpenEscrows().catch((error) =>
         console.warn("[elo] refund", (error as Error).message),
