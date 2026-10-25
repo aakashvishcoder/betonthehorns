@@ -11,10 +11,9 @@ import {
   X,
 } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
-import { toast } from "sonner";
 import { Brand, Chip, TablePreview } from "@/components/poker/PokerVisuals";
-import TableSetup from "@/components/poker/TableSetup";
 import NewsTicker from "@/components/poker/NewsTicker";
+import { useAuth } from "@/lib/auth";
 import SmoothScroll from "@/components/poker/SmoothScroll";
 import {
   PokerAtmosphere,
@@ -26,81 +25,75 @@ import {
 const steps = [
   {
     number: "01",
-    title: "Make it your table.",
-    text: "Pick your table name, choose your chips, and set the mood. Your house, your rules.",
+    title: "Connect a Solana wallet.",
+    text: "Phantom, Solflare, Backpack, or any wallet this browser exposes. That public key is your seat and your profile.",
     detail:
-      "A private table for your favorite people. No crowded lobbies, no strangers, no pressure.",
+      "No private rooms. You queue into ranked Hands Up, SNG 4, or SNG 6.",
   },
   {
     number: "02",
-    title: "Bring your people.",
-    text: "Send an invite to the group chat. From across the couch or across the world, everyone has a seat.",
+    title: "Escrow that mode’s ELO.",
+    text: "Each format keeps its own rating. When a table fills, both sides lock ELO for the match.",
     detail:
-      "Built around a simple idea: the best part of poker night is who’s sitting around the table.",
+      "The winner is paid from that escrow. Demo numbers for now — settlement is the next chain step.",
   },
   {
     number: "03",
-    title: "Let the good hands roll.",
-    text: "A little strategy. A little luck. A lot of “I knew you were bluffing.” That’s our kind of poker.",
+    title: "Mint the rank you earn.",
+    text: "Bronze through Diamond dNFTs drop per mode as your ELO climbs. Hands won and hands folded unlock extra milestones.",
     detail:
-      "Classic Texas Hold’em, play-money chips, and all the friendly competition you can handle.",
+      "Public profiles and the leaderboard stay open. Anyone can look up a wallet.",
   },
 ];
 const faqs = [
   [
-    "Do I need to download anything?",
-    "Nope. ALL IN is a browser-first concept, designed for poker night without the installations. This hackathon landing page includes a local table-setup demo and an interactive hand preview.",
+    "What is betonthehorns?",
+    "A ranked Texas Hold’em app on Solana. You queue into Hands Up, SNG 4, or SNG 6. Each mode has its own ELO.",
   ],
   [
-    "Are we playing with real money?",
-    "No. This is all about play-money chips and real bragging rights. There are no deposits, buy-ins, or cash prizes.",
+    "Do I play with cash?",
+    "Tables stake ELO, not cash chips. That ELO is escrowed for the game, then settled when the table ends.",
   ],
   [
-    "Can I play a live game on this demo?",
-    "Not yet. You can explore the table preview and save a table setup in your browser. Live multiplayer gameplay is the next step, not a feature of this landing-page demo.",
+    "What are the dNFTs?",
+    "Rank achievements for each mode (Bronze through Diamond), plus milestones such as hands won and hands folded.",
   ],
   [
-    "Do I have to be good at poker?",
-    "Absolutely not. The idea is a welcoming table for first-timers and seasoned bluffers alike. Bring your curiosity—and a friend who explains the rules.",
+    "Is this live on-chain yet?",
+    "The wallet session and routes are real. ELO, escrow, and dNFTs on these pages are demo data until the program is wired.",
   ],
 ];
 
-type EthereumProvider = {
-  request: (args: { method: string }) => Promise<string[]>;
-};
-
 export default function Home() {
   const [, navigate] = useLocation();
-  const [setupOpen, setSetupOpen] = useState(false);
+  const { isAuthenticated, status, displayAddress, connect, disconnect } =
+    useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
-  const [wallet, setWallet] = useState<string | null>(null);
   const reducedMotion = useReducedMotion();
-  const motionPaused = Boolean(reducedMotion) || setupOpen;
+  const motionPaused = Boolean(reducedMotion);
   const enter = {
     initial: { opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 },
     whileInView: { opacity: 1, y: 0 },
     viewport: { once: true },
     transition: { duration: reducedMotion ? 0 : 0.7 },
   };
-  const start = () => setSetupOpen(true);
+  async function goToDashboard() {
+    if (!isAuthenticated) {
+      const next = await connect();
+      if (!next) return;
+    }
+    navigate("/play");
+  }
 
-  // ponytail: injected EIP-1193 wallet only (MetaMask etc.); add WalletConnect for mobile wallets if needed.
-  async function connectWallet() {
-    const ethereum = (window as { ethereum?: EthereumProvider }).ethereum;
-    if (!ethereum) {
-      toast.error("No wallet found. Install a browser wallet like MetaMask.");
+  async function onWalletClick() {
+    if (isAuthenticated) {
+      await disconnect();
       return;
     }
-    try {
-      const [account] = await ethereum.request({
-        method: "eth_requestAccounts",
-      });
-      if (account) setWallet(account);
-    } catch {
-      toast.error("Wallet connection was cancelled.");
-    }
+    const next = await connect();
+    if (next) navigate("/play");
   }
 
   return (
@@ -109,18 +102,27 @@ export default function Home() {
       className="site-shell cohesive-site"
       data-motion-paused={motionPaused}
     >
-      <SmoothScroll paused={setupOpen} />
+      <SmoothScroll paused={false} />
       <header className="site-header page-width">
         <Brand />
         <nav className="desktop-nav" aria-label="Main navigation">
-          <a href="#the-table">The table</a>
+          <a href="#the-table">Modes</a>
           <a href="#how-it-works">How it works</a>
-          <a href="#faqs">FAQs</a>
+          <a href="/leaderboard">Leaderboard</a>
         </nav>
         <div className="header-actions">
-          <button className="nav-cta" onClick={connectWallet}>
-            {wallet ? (
-              `${wallet.slice(0, 6)}…${wallet.slice(-4)}`
+          <button
+            className="nav-cta"
+            onClick={() => void onWalletClick()}
+            disabled={status === "connecting"}
+            aria-label={
+              isAuthenticated ? "Disconnect wallet" : "Connect wallet"
+            }
+          >
+            {status === "connecting" ? (
+              "Connecting…"
+            ) : displayAddress ? (
+              displayAddress
             ) : (
               <>
                 Connect wallet <Wallet size={16} />
@@ -139,9 +141,9 @@ export default function Home() {
         {menuOpen && (
           <nav className="mobile-nav" aria-label="Mobile navigation">
             {[
-              ["The table", "#the-table"],
+              ["Modes", "#the-table"],
               ["How it works", "#how-it-works"],
-              ["FAQs", "#faqs"],
+              ["Leaderboard", "/leaderboard"],
             ].map(([text, link]) => (
               <a key={link} href={link} onClick={() => setMenuOpen(false)}>
                 {text}
@@ -157,43 +159,37 @@ export default function Home() {
           <section className="hero page-width" aria-labelledby="hero-title">
             <motion.div className="hero-copy" {...enter}>
               <div className="eyebrow">
-                <span className="tiny-spade">♠</span> GOOD CARDS. BETTER
-                COMPANY.
+                <span className="tiny-spade">♠</span> RANKED HOLD’EM ON SOLANA
               </div>
               <h1 id="hero-title">
-                Poker, with
+                Bet on the
                 <br />
-                your{" "}
                 <span className="people-word">
-                  people.
+                  horns.
                   <svg viewBox="0 0 310 18" aria-hidden="true">
                     <path d="M4 12C73 0 202 1 304 10M31 15c85-6 155-5 236-2" />
                   </svg>
                 </span>
               </h1>
               <p className="hero-description">
-                The best nights start with a full table.
-                <br className="desktop-br" /> Bring your friends, call a bluff,
-                and make
-                <br className="desktop-br" /> a little time for a good hand.
+                Queue Hands Up, SNG 4, or SNG 6.
+                <br className="desktop-br" /> Each mode keeps its own ELO,
+                escrowed
+                <br className="desktop-br" /> on-chain for the match.
               </p>
               <div className="hero-cta-row">
-                <button
-                  className="primary-button"
-                  onClick={() => navigate("/play")}
-                >
-                  Deal me in{" "}
+                <button className="primary-button" onClick={() => void goToDashboard()}>
+                  {isAuthenticated ? "Open dashboard" : "Connect and play"}{" "}
                   <span>
                     <ArrowUpRight size={20} />
                   </span>
                 </button>
                 <a href="#the-table" className="text-link">
-                  Meet your table <ArrowDown size={16} />
+                  See the modes <ArrowDown size={16} />
                 </a>
               </div>
               <div className="hero-note">
-                <Check size={14} /> No downloads. No buy-ins. Just bragging
-                rights.
+                <Check size={14} /> Wallet login. ELO escrow. Rank dNFTs.
               </div>
             </motion.div>
             <motion.div
@@ -218,8 +214,8 @@ export default function Home() {
             <div className="marquee-track">
               {Array.from({ length: 4 }, (_, index) => (
                 <span key={index}>
-                  <b>♠</b> ALL FRIENDS <b>♥</b> NO STRANGERS <b>♣</b> GOOD
-                  HANDS <b>♦</b> GREAT NIGHTS{" "}
+                  <b>♠</b> HANDS UP <b>♥</b> SNG 4 <b>♣</b> SNG 6
+                  <b>♦</b> ELO ESCROW{" "}
                 </span>
               ))}
             </div>
@@ -232,19 +228,19 @@ export default function Home() {
           >
             <motion.div className="section-heading" {...enter}>
               <div>
-                <span className="eyebrow">THE TABLE IS WHERE IT HAPPENS</span>
+                <span className="eyebrow">THREE MODES. THREE RATINGS.</span>
                 <h2 id="experience-title">
-                  A little competition.
+                  Ranked tables.
                   <br />
-                  <span className="muted-heading">A lot of connection.</span>
+                  <span className="muted-heading">No private rooms.</span>
                 </h2>
               </div>
               <p>
-                Not another crowded casino.
+                Queue a public sit-and-go
                 <br />
-                Just your people, your table,
+                or a heads-up match.
                 <br />
-                and one more hand.
+                Your wallet is the seat.
               </p>
             </motion.div>
             <div className="experience-layout">
@@ -253,36 +249,38 @@ export default function Home() {
               </motion.div>
               <motion.div className="experience-copy" {...enter}>
                 <div className="feature-story">
-                  <span className="feature-number">YOUR INNER CIRCLE</span>
+                  <span className="feature-number">ON-CHAIN STAKES</span>
                   <h3>
-                    Keep the table close.
+                    Escrow the ELO.
                     <br />
-                    Even from far away.
+                    Mint the rank.
                   </h3>
                   <p>
-                    Recreate the feeling of Friday night, wherever your friends
-                    happen to be. A private space for familiar faces and very
-                    questionable poker faces.
+                    Each game locks that mode’s ELO until the table is over.
+                    Climb a rank and the matching dNFT mints to the same wallet.
                   </p>
                   <div className="story-tags">
                     <span>
-                      <Check size={12} /> Private tables
+                      <Check size={12} /> Hands Up · SNG 4 · SNG 6
                     </span>
                     <span>
-                      <Check size={12} /> Play-money chips
+                      <Check size={12} /> Public profiles
                     </span>
                   </div>
                 </div>
                 <div className="small-feature">
                   <span className="small-feature-icon">♣</span>
                   <div>
-                    <h4>Less setup. More showdown.</h4>
-                    <p>Designed for the browser. Made for the group chat.</p>
+                    <h4>Milestones on the same wallet.</h4>
+                    <p>Hands won, hands folded, and rank dNFTs per mode.</p>
                   </div>
                   <ArrowUpRight size={21} />
                 </div>
-                <button className="text-link experience-link" onClick={start}>
-                  Find your seat <ArrowRight size={17} />
+                <button
+                  className="text-link experience-link"
+                  onClick={() => void goToDashboard()}
+                >
+                  Open the dashboard <ArrowRight size={17} />
                 </button>
               </motion.div>
             </div>
@@ -293,24 +291,24 @@ export default function Home() {
             aria-labelledby="how-title"
           >
             <motion.div className="how-heading" {...enter}>
-              <span className="eyebrow">FROM GROUP CHAT TO GAME NIGHT</span>
+              <span className="eyebrow">FROM WALLET TO TABLE</span>
               <h2 id="how-title">
-                Your table.
+                Connect.
                 <br />
-                Your people.
+                Queue.
                 <br />
-                <span className="muted-heading">Your kind of night.</span>
+                <span className="muted-heading">Settle the ELO.</span>
               </h2>
               <p>
-                Skip the logistics. Save your energy
+                No private lobbies. Pick a mode,
                 <br />
-                for that completely unconvincing bluff.
+                lock the escrow, play the hand.
               </p>
               <div className="how-deck-moment">
                 <PokerDeckMoment paused={motionPaused} />
                 <span className="how-deck-caption">
                   A fresh deck.
-                  <br />A familiar crowd.
+                  <br />A ranked seat.
                 </span>
               </div>
             </motion.div>
@@ -332,28 +330,31 @@ export default function Home() {
                 <p>{steps[activeStep].text}</p>
                 <p className="night-step-extra">{steps[activeStep].detail}</p>
               </div>
-              <button className="text-link night-planner-cta" onClick={start}>
-                Plan a poker night <ArrowUpRight size={16} />
+              <button
+                className="text-link night-planner-cta"
+                onClick={() => void goToDashboard()}
+              >
+                Queue a mode <ArrowUpRight size={16} />
               </button>
             </div>
           </section>
         </div>
         <section className="manifesto-section">
           <div className="manifesto-inner page-width">
-            <span className="eyebrow">OUR HOUSE RULE</span>
+            <span className="eyebrow">HOUSE RULE</span>
             <motion.p {...enter}>
               Play the hand.
               <br />
-              <span>Enjoy the company.</span>
+              <span>Stake the horns.</span>
             </motion.p>
             <div className="manifesto-bottom">
               <span className="manifesto-suits">
                 ♠ <i>♥</i> ♣ <i>♦</i>
               </span>
               <p>
-                Because the best thing you can win
+                Because the rating you escrow
                 <br />
-                is a reason to do it all again.
+                is the one you came to move.
               </p>
             </div>
           </div>
@@ -401,19 +402,22 @@ export default function Home() {
               <Chip color="ivory" value="♠" />
               <Chip color="red" value="♥" />
             </div>
-            <span className="eyebrow">THERE’S ALWAYS ROOM FOR ONE MORE</span>
+            <span className="eyebrow">THE QUEUE IS OPEN</span>
             <h2>
-              Your seat
+              Connect
               <br />
-              is waiting<span>.</span>
+              and sit down<span>.</span>
             </h2>
-            <button className="primary-button cream-button" onClick={start}>
-              Let’s make it a poker night{" "}
+            <button
+              className="primary-button cream-button"
+              onClick={() => void goToDashboard()}
+            >
+              {isAuthenticated ? "Go to dashboard" : "Connect wallet"}{" "}
               <span>
                 <ArrowUpRight size={21} />
               </span>
             </button>
-            <p>All you need is a browser and your favorite people.</p>
+            <p>A Solana wallet is the only ticket in.</p>
             <span className="closing-star" aria-hidden="true">
               ✳
             </span>
@@ -422,16 +426,15 @@ export default function Home() {
       </main>
       <footer className="site-footer page-width">
         <Brand />
-        <span>GOOD CARDS. BETTER COMPANY.</span>
+        <span>RANKED HOLD’EM ON SOLANA</span>
         <div>
-          <span>Made for the love of the game.</span>
-          <small>Hackathon prototype · Play money only</small>
+          <span>ELO escrow · rank dNFTs · demo tables</span>
+          <small>betonthehorns</small>
         </div>
         <a href="#top" aria-label="Back to top">
           <ArrowUpRight size={21} />
         </a>
       </footer>
-      <TableSetup open={setupOpen} onOpenChange={setSetupOpen} />
     </div>
   );
 }

@@ -9,8 +9,13 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   server: {
-    // The AI coach lives on the game server, which keeps the Muse API key.
-    // Defaults to the offline prototype (cd server && npm run prototype); use GAME_SERVER=http://localhost:8787 for npm start.
-    proxy: { "/api": process.env.GAME_SERVER ?? "http://localhost:8080" },
+    proxy: {
+      // AI coach + news ticker: our game server (server/src), which holds the Muse and SerpApi keys.
+      // Defaults to the offline prototype (cd server && npm run prototype); GAME_SERVER=http://localhost:8787 for npm start.
+      "/api/coach": process.env.GAME_SERVER ?? "http://localhost:8080",
+      "/api/news": process.env.GAME_SERVER ?? "http://localhost:8080",
+      // Everything else: the main API (server/index.ts).
+      "/api": "http://127.0.0.1:4000",
+    },
   },
 });

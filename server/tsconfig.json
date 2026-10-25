@@ -1,14 +1,15 @@
 {
   "compilerOptions": {
-    "target": "es2024",
-    "module": "nodenext",
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
     "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true,
-    "verbatimModuleSyntax": true,
-    "noUncheckedIndexedAccess": true,
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["./**/*.ts"],
+  // server/src is the WebSocket game server (coach, news, AI practice, Solana Elo); it has its own tsconfig.
+  "exclude": ["src", "node_modules", ".cache"]
 }

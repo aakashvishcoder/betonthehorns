@@ -7,12 +7,19 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
+      position="top-center"
+      offset={{ top: 116, right: 16, bottom: 16, left: 16 }}
       className="toaster group"
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
+          "--normal-bg": "#6f2088",
+          "--normal-text": "#ffffff",
+          "--normal-border": "#d081f1",
+          top: "116px",
+          left: "50%",
+          right: "auto",
+          bottom: "auto",
+          transform: "translateX(-50%)",
         } as React.CSSProperties
       }
       {...props}

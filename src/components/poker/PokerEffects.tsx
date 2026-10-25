@@ -21,12 +21,12 @@ const InfiniteSpiral = lazy(
 export const pokerCardArt = {
   ace: "/cards/ace-spades.webp",
   king: "/cards/king-hearts.webp",
-  back: "/cards/allin-card-back.webp",
+  back: "/cards/horns-card-back.webp",
 };
 
 const cardTextures = [
   { src: pokerCardArt.ace, alt: "Ace of spades" },
-  { src: pokerCardArt.back, alt: "ALL IN violet and maroon card back" },
+  { src: pokerCardArt.back, alt: "betonthehorns violet and maroon card back" },
   { src: pokerCardArt.king, alt: "King of hearts" },
 ];
 
@@ -301,16 +301,16 @@ export function PokerDeckMoment({ paused }: { paused: boolean }) {
 
 const nightMenuItems = [
   {
-    text: "Make it your table.",
-    marquee: "♠ MAKE IT YOUR TABLE. ♠",
+    text: "Connect a Solana wallet.",
+    marquee: "♠ CONNECT A SOLANA WALLET. ♠",
   },
   {
-    text: "Bring your people.",
-    marquee: "♣ BRING YOUR PEOPLE. ♣",
+    text: "Escrow that mode’s ELO.",
+    marquee: "♣ ESCROW THAT MODE’S ELO. ♣",
   },
   {
-    text: "Let the good hands roll.",
-    marquee: "♥ LET THE GOOD HANDS ROLL. ♥",
+    text: "Mint the rank you earn.",
+    marquee: "♥ MINT THE RANK YOU EARN. ♥",
   },
 ];
 

@@ -11,22 +11,20 @@ import { Link, useLocation } from "wouter";
 import {
   ArrowLeft,
   ArrowUpRight,
-  CircleDollarSign,
   LayoutGrid,
-  Pause,
-  Play,
-  Spade,
   Trophy,
   UserRound,
   ShieldCheck,
 } from "lucide-react";
 import { useReducedMotion } from "framer-motion";
 import { Brand } from "@/components/poker/PokerVisuals";
-import { formatChips, samplePlayer } from "@/lib/poker-design";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { demoPlayerFromAddress } from "@/lib/poker-design";
 import "@/styles/poker-app.css";
 
 const PlasmaWave = lazy(() => import("@/components/react-bits/PlasmaWave"));
-type Section = "profile" | "play" | "table" | "leaderboard";
+type Section = "profile" | "play" | "table" | "leaderboard" | "queue";
 const motionContext = createContext({
   paused: false,
   effectsPaused: false,
@@ -42,7 +40,7 @@ export function PokerMotionProvider({ children }: { children: ReactNode }) {
         paused: effectsPaused || Boolean(reduced),
         effectsPaused,
         reducedMotion: Boolean(reduced),
-        toggleEffects: () => setEffectsPaused(p => !p),
+        toggleEffects: () => setEffectsPaused((p) => !p),
       }}
     >
       {children}
@@ -52,17 +50,6 @@ export function PokerMotionProvider({ children }: { children: ReactNode }) {
 export function usePokerMotion() {
   return useContext(motionContext);
 }
-const navigation = [
-  { id: "play", label: "Play", href: "/play", icon: LayoutGrid },
-  { id: "table", label: "The table", href: "/table", icon: Spade },
-  {
-    id: "leaderboard",
-    label: "Leaderboard",
-    href: "/leaderboard",
-    icon: Trophy,
-  },
-  { id: "profile", label: "My profile", href: "/profile", icon: UserRound },
-] as const;
 
 export default function PokerAppShell({
   section,
@@ -71,14 +58,50 @@ export default function PokerAppShell({
   section: Section;
   children: ReactNode;
 }) {
-  const [location] = useLocation();
-  const { paused, effectsPaused, reducedMotion, toggleEffects } =
-    usePokerMotion();
-  const label = navigation.find(n => n.id === section)?.label ?? "The club";
+  const [location, navigate] = useLocation();
+  const { paused } = usePokerMotion();
+  const { isAuthenticated, address, displayAddress, connect, status } =
+    useAuth();
+  const [tableName, setTableName] = useState<string | null>(null);
+  const profileHref = address ? `/profile/${address}` : "/leaderboard";
+  const navigation = [
+    { id: "play", label: "Play", href: "/play", icon: LayoutGrid },
+    { id: "leaderboard", label: "Leaderboard", href: "/leaderboard", icon: Trophy },
+    { id: "profile", label: "Profile", href: profileHref, icon: UserRound },
+  ] as const;
+  const label =
+    section === "queue"
+      ? "Queue"
+      : section === "table"
+        ? "Table"
+        : (navigation.find((item) => item.id === section)?.label ??
+          "betonthehorns");
+  const player = address ? demoPlayerFromAddress(address) : null;
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
-    document.title = `${label} — ALL IN design preview`;
+    document.title = `${label} — betonthehorns`;
   }, [location, label]);
+
+  useEffect(() => {
+    if (!address) {
+      setTableName(null);
+      return;
+    }
+    const load = () => {
+      void api
+        .wallet(address)
+        .then((record) => setTableName(record.displayName))
+        .catch(() => undefined);
+    };
+    load();
+    const onName = (event: Event) => {
+      setTableName((event as CustomEvent<string | null>).detail);
+    };
+    window.addEventListener("horns-name", onName);
+    return () => window.removeEventListener("horns-name", onName);
+  }, [address]);
+
   return (
     <div
       className={`poker-app-shell poker-app-shell--${section}`}
@@ -86,35 +109,39 @@ export default function PokerAppShell({
     >
       <aside className="club-sidebar">
         <div className="club-sidebar-brand">
-          <Brand href="/" />
-          <span>GOOD CARDS. BETTER COMPANY.</span>
+          <Brand href={isAuthenticated ? "/play" : "/"} />
+          <span>RANKED HOLD’EM ON SOLANA</span>
         </div>
-        <div className="club-nav-label">THE CLUB</div>
-        <nav aria-label="Poker club navigation" className="club-nav">
+        <div className="club-nav-label">MODES</div>
+        <nav aria-label="betonthehorns navigation" className="club-nav">
           {navigation.map(({ id, label: navLabel, href, icon: Icon }) => (
             <Link
               href={href}
               key={id}
               className={
-                section === id ? "club-nav-link is-current" : "club-nav-link"
+                section === id || (id === "play" && section === "queue")
+                  ? "club-nav-link is-current"
+                  : "club-nav-link"
               }
               aria-current={section === id ? "page" : undefined}
             >
               <Icon size={18} />
               <span>{navLabel}</span>
-              {section === id && <i aria-hidden="true" />}
+              {(section === id || (id === "play" && section === "queue")) && (
+                <i aria-hidden="true" />
+              )}
             </Link>
           ))}
         </nav>
         <div className="club-sidebar-bottom">
           <Link href="/" className="club-back-home">
-            <ArrowLeft size={14} /> Back to the good times
+            <ArrowLeft size={14} /> Landing
           </Link>
           <div className="club-fair-play">
             <ShieldCheck size={15} />
             <div>
-              <strong>Just for the good times.</strong>
-              <span>Play chips. No real-money play.</span>
+              <strong>ELO escrow per game.</strong>
+              <span>Rank dNFTs mint per mode. Demo data for now.</span>
             </div>
           </div>
         </div>
@@ -122,38 +149,41 @@ export default function PokerAppShell({
       <div className="club-main-area">
         <header className="club-topbar">
           <div className="club-breadcrumb">
-            <span>THE CLUB</span>
+            <span>BETONTHEHORNS</span>
             <i>/</i>
             <b>{label}</b>
           </div>
           <div className="club-topbar-actions">
-            <span className="club-design-badge">DESIGN PREVIEW</span>
-            <span className="club-chip-balance">
-              <CircleDollarSign size={16} />
-              <strong>{formatChips(samplePlayer.chips)}</strong>
-              <small>PLAY CHIPS</small>
-            </span>
-            <button
-              className="club-icon-button"
-              onClick={toggleEffects}
-              aria-label={
-                reducedMotion
-                  ? "Motion follows your reduced-motion preference"
-                  : effectsPaused
-                    ? "Resume visual effects"
-                    : "Pause visual effects"
-              }
-              aria-pressed={paused}
-              disabled={reducedMotion}
-            >
-              {paused ? <Play size={15} /> : <Pause size={15} />}
-            </button>
+            <span className="club-design-badge">DEMO</span>
+            {player ? (
+              <span className="club-chip-balance">
+                <strong>{player.modes["hands-up"].elo}</strong>
+                <small>HANDS UP ELO</small>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="club-button club-button--secondary"
+                disabled={status === "connecting"}
+                onClick={() =>
+                  void connect().then((next) => {
+                    if (next) navigate("/play");
+                  })
+                }
+              >
+                {status === "connecting" ? "Connecting…" : "Connect wallet"}
+              </button>
+            )}
             <Link
               className="club-account"
-              href="/profile"
-              aria-label="Open Jamie's example profile"
+              href={profileHref}
+              aria-label={tableName ? `${tableName}, open profile` : "Open profile"}
             >
-              J
+              {tableName
+                ? tableName.slice(0, 2).toUpperCase()
+                : displayAddress
+                  ? displayAddress.slice(0, 2)
+                  : "?"}
             </Link>
           </div>
         </header>
@@ -175,10 +205,9 @@ export default function PokerAppShell({
         </div>
         <main className="club-content">{children}</main>
         <footer className="club-page-footer">
-          <span>ALL IN · GOOD CARDS. BETTER COMPANY.</span>
+          <span>betonthehorns · ranked Hold’em on Solana</span>
           <span>
-            Example players and games · Design prototype only{" "}
-            <ArrowUpRight size={12} />
+            Demo ELO, escrow, and dNFTs <ArrowUpRight size={12} />
           </span>
         </footer>
       </div>
