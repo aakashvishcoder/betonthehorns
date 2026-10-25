@@ -1,0 +1,16 @@
+{
+  "installCommand": "pnpm install",
+  "buildCommand": "VITE_API_URL= npx vite build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 60,
+      "includeFiles": "server/**"
+    }
+  }
+}

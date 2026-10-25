@@ -11,5 +11,7 @@ target/
 .DS_Store
 .vscode/
 .idea/
+.vercel/
 plan.md
 TODO.md
+.vercel
