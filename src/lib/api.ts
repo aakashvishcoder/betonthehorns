@@ -156,6 +156,17 @@ export type PuzzleResult = {
   solution: PuzzleSolution;
 };
 
+export type AnalysisKind = "match" | "puzzles";
+export type Analysis = {
+  grade: string;
+  headline: string;
+  summary: string;
+  strengths: string[];
+  leaks: string[];
+  keyHands: { ref: string; title: string; youDid: string; better: string; why: string }[];
+  focus: string;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
@@ -176,6 +187,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  savedAnalysis: (kind: AnalysisKind, ref: string) =>
+    request<{ analysis: Analysis | null }>(`/api/analysis/${kind}/${ref}`),
+  runAnalysis: (kind: AnalysisKind, ref: string) =>
+    request<{ analysis: Analysis }>(`/api/analysis/${kind}/${ref}`, { method: "POST" }),
   puzzlesToday: () =>
     request<{ day: string; puzzles: Puzzle[]; attempts: PuzzleResult[]; streak: number }>("/api/puzzles/today"),
   answerPuzzle: (day: string, index: number, choice: PuzzleChoice) =>

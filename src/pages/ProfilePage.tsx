@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth";
 import { gameModes } from "@/lib/game-modes";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/profile.css";
+import AnalysisPanel from "@/components/analysis/AnalysisPanel";
 
 const STARTING_ELO = 1200;
 
@@ -416,6 +417,7 @@ export default function ProfilePage() {
                     </ul>
                   )}
                 </div>
+                {mine && game.matchId && <AnalysisPanel kind="match" target={game.matchId} />}
               </Panel>
             ))}
             {(profile?.recent.length ?? 0) === 0 && (

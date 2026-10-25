@@ -93,3 +93,52 @@ export async function cortexMove(
   if (!move) throw new Error(`Cortex ${model} returned no usable move`);
   return { move, tokens: data.usage && { in: data.usage.prompt_tokens, out: data.usage.completion_tokens } };
 }
+
+/**
+ * One Cortex chat call that must return a JSON object matching `schema` (structured output when
+ * the model supports it, otherwise the first {...} in the reply). Used for longer write-ups.
+ */
+export async function cortexJson<T>(
+  auth: SnowflakeAuth,
+  model: string,
+  system: string,
+  user: string,
+  schema: { name: string; schema: object },
+  options: { maxTokens?: number; timeoutMs?: number; fetchImpl?: typeof fetch } = {},
+): Promise<{ data: T; tokens?: { in: number; out: number } }> {
+  const { maxTokens = 2_000, timeoutMs = 120_000, fetchImpl = fetch } = options;
+  const call = (structured: boolean) =>
+    fetchImpl(`${snowflakeHost(auth.account)}/api/v2/cortex/v1/chat/completions`, {
+      method: "POST",
+      headers: snowflakeHeaders(auth),
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: structured ? system : `${system}\nReply with only a JSON object.` },
+          { role: "user", content: user },
+        ],
+        max_completion_tokens: maxTokens,
+        temperature: 0.3,
+        ...(structured ? { response_format: { type: "json_schema", json_schema: { ...schema, strict: true } } } : {}),
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+  let res = await call(!noSchema.has(model));
+  if (res.status === 400 && !noSchema.has(model)) {
+    noSchema.add(model);
+    res = await call(false);
+  }
+  if (!res.ok) throw new Error(`Cortex ${model} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const body = (await res.json()) as {
+    choices?: { message?: { content?: string | null } }[];
+    usage?: { prompt_tokens: number; completion_tokens: number };
+  };
+  const text = body.choices?.[0]?.message?.content ?? "";
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) throw new Error(`Cortex ${model} returned no JSON`);
+  return {
+    data: JSON.parse(json) as T,
+    tokens: body.usage && { in: body.usage.prompt_tokens, out: body.usage.completion_tokens },
+  };
+}

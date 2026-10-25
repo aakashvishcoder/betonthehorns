@@ -13,6 +13,7 @@ import { cardArt, cardName } from "@/lib/poker-design";
 import { shortAddress } from "@/lib/utils";
 import { walletToast } from "@/lib/wallet-toast";
 import "@/styles/puzzles.css";
+import AnalysisPanel from "@/components/analysis/AnalysisPanel";
 
 type Results = Record<number, PuzzleResult>;
 type Board = Awaited<ReturnType<typeof api.puzzleLeaderboard>>["rows"];
@@ -233,6 +234,9 @@ export default function PuzzlesPage() {
           </Panel>
         )}
 
+        {done && isAuthenticated && (
+          <AnalysisPanel kind="puzzles" target={day} label="Analyze my answers" />
+        )}
         {done && (
           <div className="puzzles-summary">
             <Panel className="puzzles-panel">

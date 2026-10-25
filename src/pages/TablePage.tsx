@@ -17,6 +17,7 @@ import { cardArt, cardName, deckArt, formatChips } from "@/lib/poker-design";
 import { subscribeChannel } from "@/lib/realtime";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/table.css";
+import AnalysisPanel from "@/components/analysis/AnalysisPanel";
 
 const HoloCard = lazy(() => import("@/components/react-bits/HoloCard"));
 
@@ -502,6 +503,9 @@ export default function TablePage() {
                 <p className="felt-result" aria-live="polite">
                   {match.ranked ? "Ranked game: Elo updates on your profile" : "Practice game: unranked"}
                 </p>
+                {match.ranked && match.players.some((p) => p.walletId === address) && (
+                  <AnalysisPanel kind="match" target={match.id} />
+                )}
                 <Link href="/play" className="club-button">
                   Back to dashboard
                 </Link>

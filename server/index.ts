@@ -30,6 +30,7 @@ import { privateView, publicMatch } from "./engine.js";
 import { issueChallenge, login, logout, requireWallet, sessionWallet } from "./session.js";
 import { dailyPuzzles, publicPuzzle, today, type Choice } from "./puzzles.js";
 import { attemptsFor, leaderboard, migratePuzzles, saveAttempt, streakFor } from "./puzzle-store.js";
+import { analyze, AnalysisError, migrateAnalysis, savedAnalysis } from "./analysis.js";
 import { seatLabel } from "./names.js";
 import { coachHandler } from "./src/coach.ts";
 import { NewsFeed, newsHandler } from "./src/news.ts";
@@ -445,9 +446,47 @@ app.get("/api/puzzles/leaderboard", async (_req, res) => {
   }
 });
 
+// Post-game analysis (Claude Sonnet 4.5 on Snowflake Cortex), private to the player.
+// GET returns a saved one (or null); POST writes one, counted against the daily cap.
+const analysisKinds = { match: /^[0-9a-f-]{36}$/, puzzles: /^\d{4}-\d{2}-\d{2}$/ } as const;
+function analysisTarget(req: express.Request, res: express.Response) {
+  const walletId = requireWallet(req, res);
+  if (!walletId) return null;
+  const kind = req.params.kind as keyof typeof analysisKinds;
+  const ref = String(req.params.ref);
+  if (!(kind in analysisKinds) || !analysisKinds[kind].test(ref)) {
+    res.status(400).json({ error: "Unknown analysis" });
+    return null;
+  }
+  return { walletId, kind, ref };
+}
+
+app.get("/api/analysis/:kind/:ref", async (req, res) => {
+  const target = analysisTarget(req, res);
+  if (!target) return;
+  try {
+    res.json({ analysis: await savedAnalysis(target.walletId, target.kind, target.ref) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/analysis/:kind/:ref", async (req, res) => {
+  const target = analysisTarget(req, res);
+  if (!target) return;
+  try {
+    res.json({ analysis: await analyze(target.walletId, target.kind, target.ref) });
+  } catch (error) {
+    const status = error instanceof AnalysisError ? error.status : 502;
+    if (status === 502) console.warn("[analysis]", (error as Error).message);
+    res.status(status).json({ error: status === 502 ? "The analysis model didn't respond. Try again in a moment." : (error as Error).message });
+  }
+});
+
 async function start() {
   await migrate();
   await refundOpenEscrows();
+  if (dbReady) await migrateAnalysis().catch((error) => console.warn("[db] analysis", (error as Error).message));
   if (dbReady) await migratePuzzles().catch((error) => console.warn("[db] puzzles", (error as Error).message));
   // Build today's puzzles up front (and again after midnight) so no visitor waits for them.
   setTimeout(() => dailyPuzzles(today()), 0);

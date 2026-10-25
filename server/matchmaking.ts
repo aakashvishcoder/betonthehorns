@@ -32,6 +32,7 @@ import {
   takePracticeGame,
   trackAction,
 } from "./practice.js";
+import { recordAction, saveHistory, syncHistory } from "./history.js";
 import { seatLabel } from "./names.js";
 import { MODE_SEATS, MODES, type ActionInput, type GameMode, type MatchState } from "./types.js";
 
@@ -222,10 +223,12 @@ const tracked = new Set<string>();
 
 export async function broadcastMatch(match: MatchState, name = "state") {
   syncHands(match);
+  syncHistory(match);
   // Save play-style data once per match; settleMatch skips practice (only one human).
   if (match.status === "finished" && !tracked.has(match.id)) {
     tracked.add(match.id);
     void finishTracking(match);
+    void saveHistory(match);
   }
   const publicState = publicMatch(match);
   await publish(`table:${match.id}`, name, publicState);
@@ -254,6 +257,7 @@ export async function playAction(
   const match = matches.get(matchId);
   if (!match) throw new Error("Match not found");
   trackAction(match, walletId, input);
+  recordAction(match, walletId, input);
   applyAction(match, walletId, input);
   await logMatchEvent(match.id, input.type, walletId, input).catch((error) =>
     console.warn("[db] event", (error as Error).message),
@@ -293,6 +297,7 @@ function tick() {
     if (match.status !== "playing") continue;
     driveAi(match, async (walletId, input) => {
       trackAction(match, walletId, input);
+      recordAction(match, walletId, input);
       applyAction(match, walletId, input);
       await broadcastMatch(match);
     });
@@ -323,7 +328,9 @@ function tick() {
     ) {
       try {
         const actor = match.players[match.actionIndex]!;
-        trackAction(match, actor.walletId, { type: match.currentBet - actor.bet > 0 ? "fold" : "check" });
+        const timeout = { type: match.currentBet - actor.bet > 0 ? "fold" : "check" } as const;
+        trackAction(match, actor.walletId, timeout);
+        recordAction(match, actor.walletId, timeout);
         timeoutAct(match);
         void broadcastMatch(match);
       } catch (error) {

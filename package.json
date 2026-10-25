@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "check": "tsc -b",
     "format": "prettier --write src index.html vite.config.ts",
-    "test:server": "SNOWFLAKE_ACCOUNT= SNOWFLAKE_PAT= MODEL_API_KEY= SERPAPI_KEY= tsx --test server/*.test.ts"
+    "test:server": "DATABASE_URL=postgres://test@127.0.0.1:1/none ABLY_ROOT_KEY=test.test:test SNOWFLAKE_ACCOUNT= SNOWFLAKE_PAT= MODEL_API_KEY= SERPAPI_KEY= tsx --test server/*.test.ts"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "4.3.5",
