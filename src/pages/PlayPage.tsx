@@ -3,16 +3,14 @@ import { ArrowUpRight, Bot, ShieldCheck, Trophy } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
 import { PageHeading, Panel, Pill } from "@/components/poker-app/PokerUI";
-import { api, type PublicMatch } from "@/lib/api";
+import { api, type ProfileMode, type PublicMatch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { gameModes } from "@/lib/game-modes";
-import { demoPlayerFromAddress } from "@/lib/poker-design";
-import { walletToast } from "@/lib/wallet-toast";
 import "@/styles/play.css";
 
 export default function PlayPage() {
   const { address } = useAuth();
-  const player = demoPlayerFromAddress(address ?? "demo");
+  const [modes, setModes] = useState<ProfileMode[]>([]);
   const [live, setLive] = useState<PublicMatch | null>(null);
   const [, navigate] = useLocation();
   const [starting, setStarting] = useState<string | null>(null);
@@ -35,6 +33,10 @@ export default function PlayPage() {
       .activeMatch(address)
       .then((payload) => setLive(payload.match))
       .catch(() => undefined);
+    void api
+      .profile(address)
+      .then((record) => setModes(record.modes))
+      .catch(() => undefined);
   }, [address]);
 
   return (
@@ -43,7 +45,7 @@ export default function PlayPage() {
         <PageHeading
           eyebrow="DASHBOARD · LIVE QUEUE"
           title="Pick a ranked mode."
-          description="Each format keeps its own ELO. Matchmaking is live. ELO escrow still settles on Solana later."
+          description="Each format keeps its own ELO. The table locks what each rating can lose. Beating a higher rating is worth more."
         />
         {live && (
           <Panel className="queue-panel">
@@ -60,27 +62,27 @@ export default function PlayPage() {
 
         <section className="mode-grid" aria-label="Ranked game modes">
           {gameModes.map((mode) => {
-            const stats = player.modes[mode.id];
+            const stats = modes.find((item) => item.mode === mode.id);
             return (
               <Panel key={mode.id} className="mode-card">
                 <div className="mode-card-top">
                   <Pill tone="violet">{mode.seats} seats</Pill>
-                  <span>{stats.rank} dNFT</span>
+                  <span>{stats?.rank ?? "Bronze"}</span>
                 </div>
                 <h2>{mode.label}</h2>
                 <p>{mode.tagline}</p>
                 <dl className="mode-stats">
                   <div>
                     <dt>Your ELO</dt>
-                    <dd>{stats.elo}</dd>
+                    <dd>{stats?.elo ?? 1200}</dd>
                   </div>
                   <div>
                     <dt>Escrow</dt>
-                    <dd>{mode.escrow}</dd>
+                    <dd>At risk</dd>
                   </div>
                   <div>
                     <dt>Games</dt>
-                    <dd>{stats.games}</dd>
+                    <dd>{stats?.games ?? 0}</dd>
                   </div>
                 </dl>
                 <div className="mode-card-actions">
@@ -109,8 +111,10 @@ export default function PlayPage() {
             <div>
               <strong>ELO escrow</strong>
               <p>
-                Both sides lock this mode’s ELO before cards come out. Demo
-                numbers only — the chain settlement is not live yet.
+                Ratings start at 1,200, and any rating can queue. When the table
+                opens, each player locks the ELO the formula says they could lose
+                to that field. Beating a higher rating is worth more than beating
+                a lower one. You never lose more than you locked.
               </p>
             </div>
           </Panel>
@@ -119,8 +123,8 @@ export default function PlayPage() {
             <div>
               <strong>Rank dNFTs</strong>
               <p>
-                Bronze through Diamond mint per mode as your ELO crosses each
-                rank. Hands won and hands folded unlock extra milestones.
+                Bronze through Platinum follow each mode’s ELO. Hands played and
+                games won unlock the milestone dNFTs.
               </p>
             </div>
           </Panel>

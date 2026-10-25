@@ -307,7 +307,7 @@
   border-color: #8c2542;
 }
 
-/* Content follows the same scene instead of introducing a new demo box. */
+/* Content follows the same scene. */
 .cohesive-site .suit-marquee {
   position: relative;
   z-index: 1;

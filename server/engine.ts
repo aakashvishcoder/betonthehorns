@@ -1,6 +1,7 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { seatLabel } from "./names.js";
-import { cardCode, compareHands, evaluate, seededDeck } from "./poker.js";
+import { cardCode, compareHands, evaluate, makeDeck } from "./poker.js";
+import { newCommit, seededShuffle } from "./rng.js";
 import {
   MODE_SEATS,
   type ActionInput,
@@ -93,10 +94,10 @@ export function startHand(match: MatchState) {
     player.actedThisStreet = false;
   }
 
-  match.deck = seededDeck(Buffer.from(match.seed, "hex"), match.handNumber);
+  const deck = freshDeck(match);
   match.handStartStacks = Object.fromEntries(match.players.map((p) => [p.walletId, p.stack]));
   for (const player of alive) {
-    player.hole = [match.deck.pop()!, match.deck.pop()!];
+    player.hole = [deck.pop()!, deck.pop()!];
   }
 
   match.street = "preflop";
@@ -138,7 +139,7 @@ export function createMatch(
   mode: GameMode,
   walletIds: string[],
   botIds: string[] = [],
-  options: { seed?: string; ranked?: boolean; chainMatchId?: string | null } = {},
+  options: { ranked?: boolean } = {},
 ): MatchState {
   const seats = MODE_SEATS[mode];
   const all = [...walletIds, ...botIds];
@@ -162,6 +163,7 @@ export function createMatch(
       bot: botIds.includes(walletId),
       lastAction: null,
       actedThisStreet: false,
+      rank: "Bronze",
     })),
     dealerIndex: 0,
     street: "preflop",
@@ -181,13 +183,14 @@ export function createMatch(
     runoutAt: null,
     exposed: false,
     log: [],
+    chain: [],
     ranked: options.ranked ?? true,
-    seed: options.seed ?? randomBytes(32).toString("hex"),
-    deck: [],
     places: {},
     handStartStacks: {},
-    chainMatchId: options.chainMatchId ?? null,
-    elo: null,
+    ...(() => {
+      const commit = newCommit();
+      return { commitHash: commit.commitHash, seed: commit.seed, rngCounter: 0 };
+    })(),
   };
   startHand(match);
   return match;
@@ -347,7 +350,7 @@ function nextStreet(match: MatchState) {
   match.minRaise = match.blinds.bb;
   match.lastAggressor = null;
 
-  const deck = match.deck;
+  const deck = freshDeck(match);
 
   if (match.street === "preflop") {
     match.board.push(deck.pop()!, deck.pop()!, deck.pop()!);
@@ -370,7 +373,8 @@ function nextStreet(match: MatchState) {
 }
 
 function runOutBoard(match: MatchState) {
-  while (match.board.length < 5) match.board.push(match.deck.pop()!);
+  const deck = freshDeck(match);
+  while (match.board.length < 5) match.board.push(deck.pop()!);
 }
 
 function awardUncontested(match: MatchState, winner: Player) {
@@ -506,8 +510,21 @@ function short(walletId: string) {
   return `${walletId.slice(0, 4)}…${walletId.slice(-4)}`;
 }
 
+function freshDeck(match: MatchState) {
+  match.rngCounter += 1;
+  const used = new Set<string>();
+  for (const card of match.board) used.add(cardCode(card));
+  for (const card of match.runoutQueue) used.add(cardCode(card));
+  for (const player of match.players) {
+    for (const card of player.hole ?? []) used.add(cardCode(card));
+  }
+  return seededShuffle(makeDeck(), match.seed, match.rngCounter).filter(
+    (card) => !used.has(cardCode(card)),
+  );
+}
+
 function remainingDeck(match: MatchState) {
-  return match.deck;
+  return freshDeck(match);
 }
 
 /** Peel the rest of the board one card at a time after an all-in. */
@@ -564,14 +581,11 @@ export function publicMatch(match: MatchState, viewer?: string) {
     actionDeadline: match.actionDeadline,
     winners: match.winners,
     log: match.log.slice(-12),
+    commitHash: match.commitHash,
+    revealSeed: match.status === "finished" ? match.seed : null,
+    chain: match.chain ?? [],
     ranked: match.ranked,
     places: match.places,
-    /** sha256(seed): committed on Solana before the first deal (ranked matches). */
-    commitment: createHash("sha256").update(Buffer.from(match.seed, "hex")).digest("hex"),
-    /** Revealed when the match ends so anyone can replay every deck. */
-    seed: match.status === "finished" ? match.seed : null,
-    chainMatchId: match.chainMatchId,
-    elo: match.elo,
     players: match.players.map((player) => {
       const mine = player.walletId === viewer;
       const show = Boolean(
@@ -588,6 +602,7 @@ export function publicMatch(match: MatchState, viewer?: string) {
         bot: player.bot,
         lastAction: player.lastAction,
         name: seatLabel(player.walletId),
+        rank: player.rank || "Bronze",
         hole: player.hole
           ? show
             ? player.hole.map(cardCode)

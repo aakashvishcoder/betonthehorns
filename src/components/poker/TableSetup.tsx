@@ -242,9 +242,9 @@ export default function TableSetup({ open, onOpenChange }: TableSetupProps) {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="setup-demo-notice mt-6 flex items-center gap-2 rounded-xl border border-[#8c2542] bg-[#430e1d] px-3.5 py-3 text-xs font-bold tracking-[0.11em] text-[#e98392]">
+              <div className="setup-notice mt-6 flex items-center gap-2 rounded-xl border border-[#8c2542] bg-[#430e1d] px-3.5 py-3 text-xs font-bold tracking-[0.11em] text-[#e98392]">
                 <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
-                LOCAL DEMO · NO REAL MONEY
+                RANKED TABLES · ELO ONLY
               </div>
 
               <div className="setup-fields mt-6 space-y-5">

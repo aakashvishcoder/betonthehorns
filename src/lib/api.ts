@@ -14,6 +14,7 @@ export type PublicPlayer = {
   bot: boolean;
   lastAction: string | null;
   name: string;
+  rank: string;
   hole: string[] | null;
 };
 
@@ -33,18 +34,69 @@ export type PublicMatch = {
   actionDeadline: number | null;
   winners: { walletId: string; amount: number; hand?: string }[];
   log: string[];
+  commitHash: string;
+  revealSeed: string | null;
+  chain: ChainTx[];
   players: PublicPlayer[];
-  /** Ranked matches settle Elo on Solana; practice (vs AI) matches don't. */
+  /** Ranked matches settle Elo; practice (vs AI) matches don't. */
   ranked: boolean;
   /** Finishing place per wallet (1 = winner), filled in as players bust. */
   places: Record<string, number>;
-  /** sha256 of the shuffle seed, committed on Solana before the first deal. */
-  commitment: string;
-  /** The seed itself, revealed when the match ends. */
-  seed: string | null;
-  chainMatchId: string | null;
-  /** Elo before/after once a ranked result is settled on-chain. */
-  elo: { walletId: string; before: number; after: number }[] | null;
+};
+
+export type ChainTx = {
+  label: string;
+  signature: string;
+};
+
+export type ProfileMode = {
+  mode: GameModeId;
+  elo: number;
+  rank: string;
+  games: number;
+  wins: number;
+  hands: number;
+};
+
+export type ProfileBadge = {
+  key: string;
+  kind: "hands" | "wins" | "rank";
+  label: string;
+  detail: string;
+  mode: GameModeId | null;
+  tier: string | null;
+  earned: boolean;
+  shown: boolean;
+};
+
+export type PublicProfile = {
+  address: string;
+  displayName: string | null;
+  modes: ProfileMode[];
+  hands: number;
+  wins: number;
+  games: number;
+  recent: {
+    time: string;
+    mode: GameModeId;
+    elo: number;
+    delta: number;
+    matchId: string | null;
+    commitHash: string | null;
+    revealSeed: string | null;
+    chain: ChainTx[];
+  }[];
+  badges: ProfileBadge[];
+};
+
+export type LeaderboardRow = {
+  address: string;
+  name: string | null;
+  elo: number;
+  games: number;
+  wins: number;
+  move: number;
+  place: number;
 };
 
 export type LegalActions = {
@@ -150,6 +202,14 @@ export const api = {
       displayName: string | null;
       eloHistory: Record<GameModeId, { time: string; elo: number; matchId: string | null }[]>;
     }>(`/api/wallet/${walletId}`),
+  leaderboard: (mode: GameModeId) =>
+    request<{ mode: GameModeId; rows: LeaderboardRow[] }>(`/api/leaderboard/${mode}`),
+  profile: (walletId: string) => request<PublicProfile>(`/api/profile/${walletId}`),
+  setShowcase: (walletId: string, shown: string[]) =>
+    request<PublicProfile>("/api/profile/showcase", {
+      method: "POST",
+      body: JSON.stringify({ walletId, shown }),
+    }),
   setDisplayName: (walletId: string, displayName: string) =>
     request<{ walletId: string; displayName: string | null }>("/api/profile/name", {
       method: "POST",

@@ -1,88 +1,226 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { Connection, Keypair, clusterApiUrl } from "@solana/web3.js";
-import type { Mode } from "./src/matchmaker.ts";
-import { SolanaChain } from "./src/solana-chain.ts";
-import { appendEloHistory, dbReady } from "./schema.js";
-import type { GameMode, MatchState } from "./types.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionInstruction,
+  sendAndConfirmTransaction,
+} from "@solana/web3.js";
+import { modeIndex } from "./elo.js";
+import type { ChainTx, GameMode } from "./types.js";
 
-/**
- * Ranked matches on the horns_elo Solana program (devnet): commit the shuffle seed before the
- * first deal, settle finishing places at the end, and record the on-chain Elo in elo_history.
- * Env: SOLANA_RPC (devnet default), SERVER_KEYPAIR (~/.config/solana/horns-elo-server.json).
- * Without a keypair, matches still run; they just aren't rated.
- */
-const PROGRAM_MODE: Record<GameMode, Mode> = { "hands-up": "heads_up", "sng-4": "four", "sng-6": "six" };
+const DEFAULT_ELO_PROGRAM = "9KXCrZkohvdxYUvKU9kusUcBCdj1JB1NFUoYgFbdnWS2";
+const DEFAULT_ACHIEVEMENT_PROGRAM = "5edqME6uP35tWd8Wt47UMEND9EzwnTPWcqY7CyGk554F";
 
-function loadChain(): SolanaChain | null {
-  const path = process.env.SERVER_KEYPAIR ?? `${homedir()}/.config/solana/horns-elo-server.json`;
-  if (!existsSync(path)) {
-    console.warn(`[solana] no server keypair at ${path}; ranked Elo is off`);
-    return null;
-  }
-  const key = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path, "utf8"))));
-  const connection = new Connection(process.env.SOLANA_RPC ?? clusterApiUrl("devnet"), "confirmed");
-  console.log(`[solana] ranked Elo on ${process.env.SOLANA_RPC ?? "devnet"} as ${key.publicKey.toBase58()}`);
-  return new SolanaChain(connection, key);
+type ChainPlayer = {
+  walletId: string;
+  elo: number;
+  payout: number;
+  hands: number;
+  won: boolean;
+};
+
+function discriminator(name: string) {
+  return createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
 }
 
-const chain = loadChain();
-export const solanaReady = chain !== null;
+function matchHash(matchId: string) {
+  return createHash("sha256").update(matchId).digest();
+}
 
-const sha256 = (data: Uint8Array | string) => createHash("sha256").update(data).digest();
+function bytes32(hex: string) {
+  const buffer = Buffer.from(hex, "hex");
+  if (buffer.length !== 32) throw new Error("Expected 32 bytes");
+  return buffer;
+}
 
-async function recordElo(walletId: string, mode: GameMode, elo: number, matchId?: string) {
-  if (!dbReady) return;
-  await appendEloHistory(walletId, mode, elo, matchId).catch((error) =>
-    console.warn("[db] elo history", (error as Error).message),
+function authority() {
+  const secret = process.env.SOLANA_AUTHORITY_SECRET?.trim();
+  if (!secret?.startsWith("[")) return null;
+  const parsed = JSON.parse(secret) as number[];
+  return Keypair.fromSecretKey(Uint8Array.from(parsed));
+}
+
+function connection() {
+  return new Connection(
+    process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com",
+    "confirmed",
   );
 }
 
-/**
- * Before the first deal: register any new players (server pays) and commit sha256(seed).
- * Returns the on-chain match id, or null if Solana is off or unreachable (the match still runs).
- */
-export async function commitRankedMatch(mode: GameMode, wallets: string[], seedHex: string): Promise<string | null> {
-  if (!chain) return null;
-  const programMode = PROGRAM_MODE[mode];
+function eloProgram() {
+  return new PublicKey(process.env.ELO_PROGRAM_ID || DEFAULT_ELO_PROGRAM);
+}
+
+function achievementProgram() {
+  return new PublicKey(
+    process.env.ACHIEVEMENT_PROGRAM_ID || DEFAULT_ACHIEVEMENT_PROGRAM,
+  );
+}
+
+function ratingAddress(player: PublicKey, mode: number) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("rating"), player.toBuffer(), Buffer.from([mode])],
+    eloProgram(),
+  )[0];
+}
+
+function escrowAddress(hash: Buffer) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("escrow"), hash],
+    eloProgram(),
+  )[0];
+}
+
+function recordAddress(player: PublicKey) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("record"), player.toBuffer()],
+    achievementProgram(),
+  )[0];
+}
+
+async function send(instructions: TransactionInstruction[]) {
+  const signer = authority();
+  if (!signer || instructions.length === 0) return null;
+  const tx = new Transaction().add(...instructions);
+  return sendAndConfirmTransaction(connection(), tx, [signer]);
+}
+
+export async function lockMatch(input: {
+  matchId: string;
+  mode: GameMode;
+  commitHash: string;
+  wallets: string[];
+  stakes: number[];
+}): Promise<ChainTx[]> {
+  const signer = authority();
+  if (!signer) return [];
   try {
-    const registered = await chain.ensureRegistered(wallets, programMode);
-    for (const walletId of registered) await recordElo(walletId, mode, 1200); // starting point for the chart
-    const id = await chain.createMatch(programMode, wallets, sha256(Buffer.from(seedHex, "hex")));
-    console.log(`[solana] match ${id} committed (${mode}, ${wallets.length} players)`);
-    return id.toString();
+    const rpc = connection();
+    const mode = modeIndex(input.mode);
+    const hash = matchHash(input.matchId);
+    const commit = bytes32(input.commitHash);
+    const instructions: TransactionInstruction[] = [];
+
+    for (const walletId of input.wallets) {
+      const player = new PublicKey(walletId);
+      const rating = ratingAddress(player, mode);
+      if (await rpc.getAccountInfo(rating)) continue;
+      instructions.push(
+        new TransactionInstruction({
+          programId: eloProgram(),
+          keys: [
+            { pubkey: rating, isSigner: false, isWritable: true },
+            { pubkey: player, isSigner: false, isWritable: false },
+            { pubkey: signer.publicKey, isSigner: true, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          ],
+          data: Buffer.concat([discriminator("initialize_rating"), Buffer.from([mode])]),
+        }),
+      );
+    }
+
+    const escrow = escrowAddress(hash);
+    if (!(await rpc.getAccountInfo(escrow))) {
+      const stakeData = Buffer.alloc(4 + input.stakes.length * 4);
+      stakeData.writeUInt32LE(input.stakes.length, 0);
+      input.stakes.forEach((stake, index) => {
+        stakeData.writeUInt32LE(stake, 4 + index * 4);
+      });
+      const body = Buffer.concat([
+        hash,
+        Buffer.from([mode]),
+        commit,
+        stakeData,
+      ]);
+      instructions.push(
+        new TransactionInstruction({
+          programId: eloProgram(),
+          keys: [
+            { pubkey: escrow, isSigner: false, isWritable: true },
+            { pubkey: signer.publicKey, isSigner: true, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+            ...input.wallets.map((walletId) => ({
+              pubkey: ratingAddress(new PublicKey(walletId), mode),
+              isSigner: false,
+              isWritable: true,
+            })),
+          ],
+          data: Buffer.concat([discriminator("open_escrow"), body]),
+        }),
+      );
+    }
+
+    const signature = await send(instructions);
+    return signature ? [{ label: "ELO locked", signature }] : [];
   } catch (error) {
-    console.warn("[solana] commit failed; match will be unrated:", (error as Error).message);
-    return null;
+    console.warn("[chain] lock", (error as Error).message);
+    return [];
   }
 }
 
-/** The wallet's on-chain Elo for this mode, or null if unrated / Solana is off. */
-export async function ratingFor(walletId: string, mode: GameMode): Promise<number | null> {
-  if (!chain) return null;
-  return chain.rating(walletId, PROGRAM_MODE[mode]).catch(() => null);
-}
-
-export type EloChange = { walletId: string; before: number; after: number };
-
-/** After the last hand: reveal the seed, settle places on-chain, and record the new ratings. */
-export async function settleRankedMatch(match: MatchState): Promise<EloChange[] | null> {
-  if (!chain || !match.ranked || match.chainMatchId === null) return null;
-  const programMode = PROGRAM_MODE[match.mode];
-  const wallets = match.players.map((p) => p.walletId);
-  const places = wallets.map((w) => match.places[w] ?? wallets.length);
+export async function revealMatch(input: {
+  matchId: string;
+  mode: GameMode;
+  seed: string;
+  players: ChainPlayer[];
+}): Promise<ChainTx[]> {
+  const signer = authority();
+  if (!signer) return [];
   try {
-    const before = await Promise.all(wallets.map((w) => chain.rating(w, programMode)));
-    const standings = match.players.map((p) => ({ wallet: p.walletId, place: match.places[p.walletId], stack: p.stack }));
-    await chain.settleMatch(BigInt(match.chainMatchId), programMode, wallets, places, Buffer.from(match.seed, "hex"), sha256(JSON.stringify(standings)));
-    const after = await Promise.all(wallets.map((w) => chain.rating(w, programMode)));
-    const changes = wallets.map((walletId, i) => ({ walletId, before: before[i] ?? 1200, after: after[i] ?? 1200 }));
-    for (const c of changes) await recordElo(c.walletId, match.mode, c.after, match.id);
-    console.log(`[solana] match ${match.chainMatchId} settled: ${changes.map((c) => `${c.walletId.slice(0, 4)} ${c.before}->${c.after}`).join(", ")}`);
-    return changes;
+    const mode = modeIndex(input.mode);
+    const hash = matchHash(input.matchId);
+    const seed = bytes32(input.seed);
+    const escrow = escrowAddress(hash);
+    const payouts = Buffer.alloc(4 + input.players.length * 4);
+    payouts.writeUInt32LE(input.players.length, 0);
+    input.players.forEach((player, index) => {
+      payouts.writeUInt32LE(player.payout, 4 + index * 4);
+    });
+
+    const txs: ChainTx[] = [];
+    const settled = await send([
+      new TransactionInstruction({
+        programId: eloProgram(),
+        keys: [
+          { pubkey: escrow, isSigner: false, isWritable: true },
+          { pubkey: signer.publicKey, isSigner: true, isWritable: false },
+          ...input.players.map((player) => ({
+            pubkey: ratingAddress(new PublicKey(player.walletId), mode),
+            isSigner: false,
+            isWritable: true,
+          })),
+        ],
+        data: Buffer.concat([discriminator("settle"), seed, payouts]),
+      }),
+    ]);
+    if (settled) txs.push({ label: "ELO settled", signature: settled });
+
+    const syncs = input.players.map((player) => {
+      const wallet = new PublicKey(player.walletId);
+      const body = Buffer.alloc(1 + 4 + 4 + 1);
+      body.writeUInt8(mode, 0);
+      body.writeUInt32LE(player.elo, 1);
+      body.writeUInt32LE(player.hands, 5);
+      body.writeUInt8(player.won ? 1 : 0, 9);
+      return new TransactionInstruction({
+        programId: achievementProgram(),
+        keys: [
+          { pubkey: recordAddress(wallet), isSigner: false, isWritable: true },
+          { pubkey: wallet, isSigner: false, isWritable: false },
+          { pubkey: signer.publicKey, isSigner: true, isWritable: true },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        data: Buffer.concat([discriminator("sync"), body]),
+      });
+    });
+    const synced = await send(syncs);
+    if (synced) txs.push({ label: "Achievement sync", signature: synced });
+    return txs;
   } catch (error) {
-    console.warn(`[solana] settle failed for match ${match.chainMatchId}:`, (error as Error).message);
-    return null;
+    console.warn("[chain] reveal", (error as Error).message);
+    return [];
   }
 }

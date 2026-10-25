@@ -21,7 +21,6 @@ import { useReducedMotion } from "framer-motion";
 import { Brand } from "@/components/poker/PokerVisuals";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { demoPlayerFromAddress } from "@/lib/poker-design";
 import "@/styles/poker-app.css";
 
 const PlasmaWave = lazy(() => import("@/components/react-bits/PlasmaWave"));
@@ -64,6 +63,7 @@ export default function PokerAppShell({
   const { isAuthenticated, address, displayAddress, connect, status } =
     useAuth();
   const [tableName, setTableName] = useState<string | null>(null);
+  const [handsUpElo, setHandsUpElo] = useState<number | null>(null);
   const profileHref = address ? `/profile/${address}` : "/leaderboard";
   const navigation = [
     { id: "play", label: "Play", href: "/play", icon: LayoutGrid },
@@ -78,8 +78,6 @@ export default function PokerAppShell({
         ? "Table"
         : (navigation.find((item) => item.id === section)?.label ??
           "betonthehorns");
-  const player = address ? demoPlayerFromAddress(address) : null;
-
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
     document.title = `${label} — betonthehorns`;
@@ -88,12 +86,16 @@ export default function PokerAppShell({
   useEffect(() => {
     if (!address) {
       setTableName(null);
+      setHandsUpElo(null);
       return;
     }
     const load = () => {
       void api
-        .wallet(address)
-        .then((record) => setTableName(record.displayName))
+        .profile(address)
+        .then((record) => {
+          setTableName(record.displayName);
+          setHandsUpElo(record.modes.find((mode) => mode.mode === "hands-up")?.elo ?? 1200);
+        })
         .catch(() => undefined);
     };
     load();
@@ -137,13 +139,13 @@ export default function PokerAppShell({
         </nav>
         <div className="club-sidebar-bottom">
           <Link href="/" className="club-back-home">
-            <ArrowLeft size={14} /> Landing
+            <ArrowLeft size={14} /> Front Page
           </Link>
           <div className="club-fair-play">
             <ShieldCheck size={15} />
             <div>
               <strong>ELO escrow per game.</strong>
-              <span>Rank dNFTs mint per mode. Demo data for now.</span>
+              <span>Rank dNFTs update per mode after each table.</span>
             </div>
           </div>
         </div>
@@ -156,10 +158,9 @@ export default function PokerAppShell({
             <b>{label}</b>
           </div>
           <div className="club-topbar-actions">
-            <span className="club-design-badge">DEMO</span>
-            {player ? (
+            {address ? (
               <span className="club-chip-balance">
-                <strong>{player.modes["hands-up"].elo}</strong>
+                <strong>{handsUpElo ?? "—"}</strong>
                 <small>HANDS UP ELO</small>
               </span>
             ) : (
@@ -209,7 +210,7 @@ export default function PokerAppShell({
         <footer className="club-page-footer">
           <span>betonthehorns · ranked Hold’em on Solana</span>
           <span>
-            Demo ELO, escrow, and dNFTs <ArrowUpRight size={12} />
+            ELO escrow · rank dNFTs <ArrowUpRight size={12} />
           </span>
         </footer>
       </div>

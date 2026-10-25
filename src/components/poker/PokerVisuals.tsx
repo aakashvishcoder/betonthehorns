@@ -102,7 +102,7 @@ export function TablePreview() {
       <div className="preview-topline">
         <span>
           <i className="status-dot" />
-          HANDS UP · DEMO
+          HANDS UP · LIVE
         </span>
         <span>ELO ESCROW LIVE</span>
       </div>

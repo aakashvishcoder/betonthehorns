@@ -1,7 +1,18 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
-import { dbReady, migrate, getWalletRecord, setDisplayName } from "./schema.js";
+import {
+  dbReady,
+  migrate,
+  getWalletRecord,
+  setDisplayName,
+  getLeaderboard,
+  getProfile,
+  refundOpenEscrows,
+  setShowcase,
+} from "./schema.js";
+import { buildBadges } from "./badges.js";
+import { rankFromElo, STARTING_ELO } from "./elo.js";
 import { tokenRequest } from "./ably.js";
 import {
   addChat,
@@ -17,7 +28,6 @@ import {
 } from "./matchmaking.js";
 import { privateView, publicMatch } from "./engine.js";
 import { issueChallenge, login, logout, requireWallet, sessionWallet } from "./session.js";
-import { solanaReady } from "./chain.js";
 import { dailyPuzzles, publicPuzzle, today, type Choice } from "./puzzles.js";
 import { attemptsFor, leaderboard, migratePuzzles, saveAttempt, streakFor } from "./puzzle-store.js";
 import { seatLabel } from "./names.js";
@@ -79,7 +89,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "betonthehorns",
-    elo: solanaReady ? "solana" : "solana-off",
+    elo: "settled-after-match",
     db: dbReady,
   });
 });
@@ -155,6 +165,97 @@ app.post("/api/profile/name", async (req, res) => {
   }
 });
 
+function profilePayload(
+  address: string,
+  record: Awaited<ReturnType<typeof getProfile>>,
+) {
+  const byMode = new Map(record.stats.map((row) => [row.mode, row]));
+  const modes = MODES.map((mode) => {
+    const row = byMode.get(mode);
+    const elo = row?.elo ?? STARTING_ELO;
+    return {
+      mode,
+      elo,
+      rank: rankFromElo(elo),
+      games: row?.games ?? 0,
+      wins: row?.wins ?? 0,
+      hands: row?.hands ?? 0,
+    };
+  });
+  const hands = modes.reduce((sum, mode) => sum + mode.hands, 0);
+  const wins = modes.reduce((sum, mode) => sum + mode.wins, 0);
+  return {
+    address,
+    displayName: record.displayName,
+    modes,
+    hands,
+    wins,
+    games: modes.reduce((sum, mode) => sum + mode.games, 0),
+    recent: record.recent,
+    badges: buildBadges({ modes, hands, wins, showcase: record.showcase }),
+  };
+}
+
+app.get("/api/leaderboard/:mode", async (req, res) => {
+  try {
+    if (!isMode(req.params.mode)) {
+      res.status(400).json({ error: "Unknown mode" });
+      return;
+    }
+    if (!dbReady) {
+      res.json({ mode: req.params.mode, rows: [], db: false });
+      return;
+    }
+    res.json({ mode: req.params.mode, rows: await getLeaderboard(req.params.mode) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.get("/api/profile/:walletId", async (req, res) => {
+  try {
+    if (!isWalletId(req.params.walletId)) {
+      res.status(400).json({ error: "Invalid wallet" });
+      return;
+    }
+    if (!dbReady) {
+      res.status(503).json({ error: "Database is not connected" });
+      return;
+    }
+    res.json(profilePayload(req.params.walletId, await getProfile(req.params.walletId)));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/profile/showcase", async (req, res) => {
+  try {
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
+    const shown = (req.body as { shown?: unknown }).shown;
+    if (!Array.isArray(shown) || shown.some((key) => typeof key !== "string")) {
+      res.status(400).json({ error: "shown keys required" });
+      return;
+    }
+    if (!dbReady) {
+      res.status(503).json({ error: "Database is not connected" });
+      return;
+    }
+    const record = await getProfile(walletId);
+    const payload = profilePayload(walletId, record);
+    const allowed = new Set(payload.badges.filter((badge) => badge.earned).map((badge) => badge.key));
+    const next = new Set(shown.filter((key) => allowed.has(key)));
+    await setShowcase(
+      walletId,
+      [...allowed].map((key) => ({ key, shown: next.has(key) })),
+    );
+    const saved = await getProfile(walletId);
+    res.json(profilePayload(walletId, saved));
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
 app.post("/api/ably/token", async (req, res) => {
   try {
     const walletId = requireWallet(req, res);
@@ -184,7 +285,7 @@ app.post("/api/queue", async (req, res) => {
     }
     res.json(await joinQueue(walletId, mode));
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -346,6 +447,7 @@ app.get("/api/puzzles/leaderboard", async (_req, res) => {
 
 async function start() {
   await migrate();
+  await refundOpenEscrows();
   if (dbReady) await migratePuzzles().catch((error) => console.warn("[db] puzzles", (error as Error).message));
   // Build today's puzzles up front (and again after midnight) so no visitor waits for them.
   setTimeout(() => dailyPuzzles(today()), 0);

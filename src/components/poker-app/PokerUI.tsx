@@ -72,6 +72,96 @@ export function Pill({
 }) {
   return <span className={`club-pill club-pill--${tone}`}>{children}</span>;
 }
+const RANK_TIERS = ["bronze", "silver", "gold", "diamond", "platinum"] as const;
+
+/** Two-tone disc for a mode's rank. The left half is the darker shade of the same color. */
+export function RankMedal({
+  rank,
+  size = 22,
+}: {
+  rank: string;
+  size?: number;
+}) {
+  const tier = RANK_TIERS.includes(rank.toLowerCase() as (typeof RANK_TIERS)[number])
+    ? rank.toLowerCase()
+    : "bronze";
+  return (
+    <span
+      className={`rank-medal rank-medal--${tier}`}
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label={`${rank} rank`}
+    >
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path className="rank-medal-shade" d="M16 2a14 14 0 0 0 0 28z" />
+        <path className="rank-medal-face" d="M16 2a14 14 0 0 1 0 28z" />
+      </svg>
+    </span>
+  );
+}
+
+export function SolanaMark({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      className="solana-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 397 311"
+      aria-hidden="true"
+    >
+      <path
+        fill="#14F195"
+        d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7z"
+      />
+      <path
+        fill="#9945FF"
+        d="M64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8z"
+      />
+      <path
+        fill="#19C6E6"
+        d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z"
+      />
+    </svg>
+  );
+}
+
+export function explorerTx(signature: string) {
+  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+}
+
+export function CopyHash({
+  label,
+  value,
+  hidden,
+}: {
+  label: string;
+  value: string | null;
+  hidden?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="copy-hash">
+      <span>{label}</span>
+      <code>{value ?? hidden ?? "Not published yet"}</code>
+      <button type="button" className="club-button club-button--secondary" onClick={() => void copy()} disabled={!value}>
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
 export function Avatar({
   name,
   size = 40,
@@ -87,7 +177,7 @@ export function Avatar({
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
-    .map(n => n[0])
+    .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
   return (
     <span

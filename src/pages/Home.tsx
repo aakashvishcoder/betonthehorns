@@ -33,14 +33,14 @@ const steps = [
   {
     number: "02",
     title: "Escrow that mode’s ELO.",
-    text: "Each format keeps its own rating. When a table fills, both sides lock ELO for the match.",
+    text: "Each format keeps its own rating. When a table fills, every seat locks the ELO they could lose to that field.",
     detail:
-      "The winner is paid from that escrow. Demo numbers for now — settlement is the next chain step.",
+      "A favorite gains less for winning than an underdog does. The result is written into that mode’s rating history.",
   },
   {
     number: "03",
     title: "Mint the rank you earn.",
-    text: "Bronze through Diamond dNFTs drop per mode as your ELO climbs. Hands won and hands folded unlock extra milestones.",
+    text: "Bronze through Platinum dNFTs follow each mode’s ELO. Hands played and games won unlock extra milestones.",
     detail:
       "Public profiles and the leaderboard stay open. Anyone can look up a wallet.",
   },
@@ -52,15 +52,15 @@ const faqs = [
   ],
   [
     "Do I play with cash?",
-    "Tables stake ELO, not cash chips. That ELO is escrowed for the game, then settled when the table ends.",
+    "Tables move ELO, not cash. The amount you can lose is locked when the table opens, then paid out from who actually won and how far apart the ratings were.",
   ],
   [
     "What are the dNFTs?",
-    "Rank achievements for each mode (Bronze through Diamond), plus milestones such as hands won and hands folded.",
+    "A rank dNFT for each mode, from Bronze through Platinum, plus milestones for hands played and games won. You choose which ones appear on your public profile.",
   ],
   [
     "Is this live on-chain yet?",
-    "The wallet session and routes are real. ELO, escrow, and dNFTs on these pages are demo data until the program is wired.",
+    "Matchmaking, ratings, and public profiles are live. The devnet programs record the ELO escrow, the shuffle commitment, and the dNFT milestones.",
   ],
 ];
 
@@ -272,7 +272,7 @@ export default function Home() {
                   <span className="small-feature-icon">♣</span>
                   <div>
                     <h4>Milestones on the same wallet.</h4>
-                    <p>Hands won, hands folded, and rank dNFTs per mode.</p>
+                    <p>Hands played, games won, and rank dNFTs per mode.</p>
                   </div>
                   <ArrowUpRight size={21} />
                 </div>
@@ -428,7 +428,7 @@ export default function Home() {
         <Brand />
         <span>RANKED HOLD’EM ON SOLANA</span>
         <div>
-          <span>ELO escrow · rank dNFTs · demo tables</span>
+          <span>ELO escrow · rank dNFTs · live tables</span>
           <small>betonthehorns</small>
         </div>
         <a href="#top" aria-label="Back to top">
