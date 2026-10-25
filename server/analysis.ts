@@ -3,7 +3,7 @@ import { dbReady } from "./schema.js";
 import { loadHistory, viewFor, type HistoryHand, type MatchHistory } from "./history.js";
 import { dailyPuzzles } from "./puzzles.js";
 import { attemptsFor } from "./puzzle-store.js";
-import { evaluate } from "./poker.js";
+import { compareHands, evaluate, makeDeck } from "./poker.js";
 import { seatLabel } from "./names.js";
 import { cortexJson, snowflakeAuthFromEnv } from "./src/ai/cortex.ts";
 import type { Card } from "./types.js";
@@ -66,7 +66,7 @@ const SCHEMA = {
 };
 
 const SYSTEM = `You are an expert No-Limit Hold'em coach reviewing one player's decisions after a game.
-Cards use standard notation (Kc = king of clubs). Made hands given in parentheses come from a hand evaluator and are always correct: trust them over your own reading of the cards.
+Cards use standard notation (Kc = king of clubs). Made hands and draws (with exact outs) given in parentheses come from a hand evaluator and are always correct: trust them over your own reading of the cards. A draw listed on the turn is still live with one card to come; on the river there are no draws.
 Judge decisions, not results: a good call that lost is still good. Use the numbers given (pot, price, stacks in big blinds) and do the math: pot odds, required equity, stack-to-pot ratio, push/fold ranges for short stacks.
 Only use cards listed as known. Unknown opponent hands must be reasoned about as ranges, never guessed as specific cards.
 Speak to the player as "you". Be specific, concise and encouraging; no generic advice.`;
@@ -180,6 +180,42 @@ const toCard = (code: string): Card => ({ rank: "23456789TJQKA".indexOf(code[0]!
 /** The made hand from these cards, from our evaluator, so the model never has to work it out. */
 const madeHand = (hole: string[], board: string[]) => evaluate(hole.map(toCard), board.map(toCard)).name;
 
+const STRAIGHT = 4, FLUSH = 5, STRAIGHT_FLUSH = 8;
+/**
+ * Flush and straight draws on the flop or turn, with exact outs: every unseen card that gives
+ * you a straight or flush you don't have yet, better than the board alone. Exported for tests.
+ */
+export function draws(hole: string[], board: string[]): string | null {
+  if (board.length < 3 || board.length > 4) return null;
+  const mine = hole.map(toCard), shared = board.map(toCard);
+  const now = evaluate(mine, shared).category;
+  const seen = new Set([...hole, ...board]);
+  let flush = 0, straight = 0, total = 0;
+  for (const card of makeDeck()) {
+    if (seen.has(`${"23456789TJQKA"[card.rank - 2]}${card.suit}`)) continue;
+    const next = evaluate(mine, [...shared, card]);
+    const isFlush = next.category === FLUSH || next.category === STRAIGHT_FLUSH;
+    const isStraight = next.category === STRAIGHT || next.category === STRAIGHT_FLUSH;
+    if ((!isFlush && !isStraight) || next.category <= now) continue;
+    // A straight or flush that's all on the board isn't yours.
+    if (compareHands(next, evaluate([], [...shared, card])) <= 0) continue;
+    total++;
+    if (isFlush && now < FLUSH) flush++;
+    if (isStraight && now < STRAIGHT) straight++;
+  }
+  const parts = [
+    ...(flush ? [`flush draw (${flush} outs)`] : []),
+    ...(straight ? [straight >= 8 ? `open-ended straight draw (${straight} outs)` : `gutshot straight draw (${straight} outs)`] : []),
+  ];
+  return parts.length ? `${parts.join(" + ")}${parts.length > 1 ? `, ${total} outs total` : ""}` : null;
+}
+
+/** "Pair of kings" or "Ace high + flush draw (9 outs)" on the flop and turn. */
+const holding = (hole: string[], board: string[]) => {
+  const draw = draws(hole, board);
+  return draw ? `${madeHand(hole, board)} + ${draw}` : madeHand(hole, board);
+};
+
 function potOf(h: HistoryHand) {
   return h.winners.reduce((s, w) => s + w.amount, 0);
 }
@@ -198,7 +234,7 @@ function describeHand(h: HistoryHand, name: (id: string) => string, me: string) 
       const cards = { flop: 3, turn: 4, river: 5 }[street];
       const board = cards && h.board.length >= cards ? h.board.slice(0, cards) : null;
       const mine = h.holes[me];
-      out.push(`  ${street}${board ? ` [${show(board)}]${mine ? ` (you have: ${madeHand(mine, board)})` : ""}` : ""}:`);
+      out.push(`  ${street}${board ? ` [${show(board)}]${mine ? ` (you have: ${holding(mine, board)})` : ""}` : ""}:`);
     }
     const s = a.player === me ? "" : "s";
     const what = a.action === "raise" ? `raise${s} to ${bb(a.raiseTo ?? 0)}` : a.action === "call" ? `call${s} ${bb(a.toCall)}` : `${a.action}${s}`;
@@ -222,7 +258,7 @@ async function puzzlePrompt(walletId: string, day: string) {
     const label = (id: string) => p.options.find((o) => o.id === id)?.label ?? id;
     lines.push(
       `Puzzle ${p.index} (${p.difficulty}, ${p.street}, ${p.position}): ${p.title}`,
-      `  Hand: ${show(p.hero)}${p.board.length ? `, board ${show(p.board)} (made hand: ${madeHand(p.hero, p.board)})` : ""}`,
+      `  Hand: ${show(p.hero)}${p.board.length ? `, board ${show(p.board)} (you have: ${holding(p.hero, p.board)})` : ""}`,
       `  ${p.situation} ${p.assumption}`,
       `  They chose: ${label(a.choice)} (${a.correct ? "correct" : "wrong"}). Best: ${label(p.solution.answer)}.`,
       `  Math: ${p.solution.numbers.map((n) => `${n.label} ${n.value}`).join(", ")}. ${p.solution.explanation}`,

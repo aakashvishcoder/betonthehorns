@@ -1,7 +1,7 @@
 // npx tsx --test server/analysis.test.ts   (no database or Snowflake needed)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeMatch } from "./analysis.js";
+import { describeMatch, draws } from "./analysis.js";
 import { applyAction, continueAfterShowdown, createMatch, legalActions, stepRunout } from "./engine.js";
 import { liveHands, recordAction, syncHistory, viewFor, type MatchHistory } from "./history.js";
 import type { ActionInput, MatchState } from "./types.js";
@@ -71,4 +71,17 @@ test("the analysis prompt only shows cards the player could have seen", () => {
   assert.match(second!, /final hands: You Ace high, Opp1 Pair of queens|final hands: You .*, Opp1 .*queens/i);
   assert.match(text, /You raise to 3bb \(pot 1\.5bb, to call 0\.5bb, stack 49\.5bb\)/);
   assert.match(text, /finished place 1 of 2/);
+});
+
+test("draws are named with exact outs, and stay live on the turn", () => {
+  assert.equal(draws(["AS", "8S"], ["KD", "JS", "4S"]), "flush draw (9 outs)");
+  assert.equal(draws(["AS", "8S"], ["KD", "JS", "4S", "7D"]), "flush draw (9 outs)", "the turn bricked; still a draw");
+  assert.equal(draws(["AS", "8S"], ["KD", "JS", "4S", "7D", "2C"]), null, "no draws on the river");
+  assert.equal(draws(["9H", "8C"], ["7D", "6S", "2C"]), "open-ended straight draw (8 outs)");
+  assert.equal(draws(["9H", "8C"], ["6D", "5S", "2C"]), "gutshot straight draw (4 outs)");
+  // Ten of hearts makes both: 9 flush outs + 4 straight outs, 12 different cards.
+  assert.equal(draws(["AH", "KH"], ["QH", "JH", "2C"]), "flush draw (9 outs) + gutshot straight draw (4 outs), 12 outs total");
+  // A straight or flush that would be all on the board doesn't count.
+  assert.equal(draws(["2C", "3D"], ["9H", "TH", "JH", "QD"]), null);
+  assert.equal(draws(["KC", "KD"], ["KH", "7S", "2D"]), null, "a set has no straight/flush draw");
 });
