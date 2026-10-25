@@ -6,7 +6,7 @@ import { PageHeading, Panel, Pill } from "@/components/poker-app/PokerUI";
 import { api, type QueueSnapshot } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
-import { enterQueuePresence, sendInbox, subscribeChannel, watchConnection } from "@/lib/realtime";
+import { enterQueuePresence, sendInbox, subscribeChannel, watchConnection, watchGlobalQueue } from "@/lib/realtime";
 import "@/styles/play.css";
 
 export default function QueuePage() {
@@ -77,15 +77,9 @@ export default function QueuePage() {
         if (!cancelled) setError(err.message);
       });
 
-    const stopQueue = subscribeChannel(
-      address,
-      `queue:${modeId}`,
-      "waiting",
-      (data) => {
-        if (!cancelled) setQueue(data as QueueSnapshot);
-      },
-      1,
-    );
+    const stopQueue = watchGlobalQueue(address, modeId, mode?.seats ?? 2, (data) => {
+      if (!cancelled) setQueue(data);
+    });
     const stopWallet = subscribeChannel(address, `wallet:${address}`, "matched", (data) => {
       const payload = data as { matchId?: string };
       if (payload.matchId) goTable(payload.matchId);
@@ -143,11 +137,11 @@ export default function QueuePage() {
         <Panel className="queue-panel">
           <div className="queue-status">
             <Pill tone="maroon">SEARCHING</Pill>
-            <h2>Waiting for {mode.seats} wallets.</h2>
+            <h2>Waiting for {mode.seats} wallets worldwide.</h2>
             <p>
-              {waiting} / {mode.seats} in queue · {seconds}s
+              {waiting} / {mode.seats} in the global {mode.label} queue · {seconds}s
             </p>
-            <p>The table starts when {mode.seats} wallets are in this queue.</p>
+            <p>This mode has one queue on Ably. The table starts when {mode.seats} wallets are in it.</p>
             {error && <p>{error}</p>}
           </div>
           <dl className="mode-stats">
@@ -170,7 +164,7 @@ export default function QueuePage() {
             </Link>
           </div>
           <p className="queue-hint">
-            <UsersRound size={14} /> The table opens on its own when the seats fill.
+            <UsersRound size={14} /> Anyone on this {mode.label} queue, anywhere, can fill a seat.
             {queue && queue.wallets.length === 1 && queue.wallets[0] === address
               ? " This wallet is one seat, so the other device needs a different wallet."
               : ""}
