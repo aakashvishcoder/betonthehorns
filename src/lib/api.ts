@@ -36,6 +36,7 @@ export type PublicMatch = {
   commitHash: string;
   revealSeed: string | null;
   chain: ChainTx[];
+  revision?: number;
   players: PublicPlayer[];
 };
 

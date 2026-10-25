@@ -14,10 +14,12 @@ import {
 import { buildBadges } from "./badges.js";
 import { rankFromElo, STARTING_ELO } from "./elo.js";
 import { tokenRequest } from "./ably.js";
+import { listenInbox } from "./bus.js";
 import {
   addChat,
   getChat,
   getMatch,
+  hydrateLiveMatches,
   joinQueue,
   leaveQueue,
   playAction,
@@ -30,6 +32,16 @@ import { MODES, type ActionType, type GameMode } from "./types.js";
 
 const port = Number(process.env.PORT || 4000);
 const origin = process.env.CLIENT_ORIGIN || "http://127.0.0.1:5176";
+
+function browserMayCall(requestOrigin: string | undefined) {
+  if (!requestOrigin || requestOrigin === origin) return true;
+  try {
+    const url = new URL(requestOrigin);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 function isMode(value: unknown): value is GameMode {
   return typeof value === "string" && (MODES as readonly string[]).includes(value);
@@ -53,15 +65,7 @@ const app = express();
 app.use(
   cors({
     origin(requestOrigin, callback) {
-      if (
-        !requestOrigin ||
-        requestOrigin === origin ||
-        /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(requestOrigin)
-      ) {
-        callback(null, true);
-        return;
-      }
-      callback(null, false);
+      callback(null, browserMayCall(requestOrigin));
     },
     credentials: true,
   }),
@@ -73,6 +77,7 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     service: "betonthehorns",
     elo: "settled-after-match",
+    matchmaking: "global-ably",
     db: dbReady,
   });
 });
@@ -221,12 +226,12 @@ app.post("/api/ably/token", async (req, res) => {
   }
 });
 
-app.get("/api/queue/:mode", (req, res) => {
+app.get("/api/queue/:mode", async (req, res) => {
   if (!isMode(req.params.mode)) {
     res.status(400).json({ error: "Unknown mode" });
     return;
   }
-  res.json(queueSnapshot(req.params.mode));
+  res.json(await queueSnapshot(req.params.mode));
 });
 
 app.post("/api/queue", async (req, res) => {
@@ -257,12 +262,12 @@ app.delete("/api/queue", async (req, res) => {
   }
 });
 
-app.get("/api/match/active/:walletId", (req, res) => {
+app.get("/api/match/active/:walletId", async (req, res) => {
   if (!isWalletId(req.params.walletId)) {
     res.status(400).json({ error: "Invalid wallet" });
     return;
   }
-  const match = walletMatch(req.params.walletId);
+  const match = await walletMatch(req.params.walletId);
   if (!match) {
     res.json({ match: null });
     return;
@@ -270,12 +275,12 @@ app.get("/api/match/active/:walletId", (req, res) => {
   res.json({
     match: publicMatch(match, req.params.walletId),
     you: privateView(match, req.params.walletId),
-    chat: getChat(match.id),
+    chat: await getChat(match.id),
   });
 });
 
-app.get("/api/match/:id", (req, res) => {
-  const match = getMatch(req.params.id);
+app.get("/api/match/:id", async (req, res) => {
+  const match = await getMatch(req.params.id);
   if (!match) {
     res.status(404).json({ error: "Match not found" });
     return;
@@ -284,7 +289,7 @@ app.get("/api/match/:id", (req, res) => {
   res.json({
     match: publicMatch(match, isWalletId(walletId) ? walletId : undefined),
     you: isWalletId(walletId) ? privateView(match, walletId) : null,
-    chat: getChat(match.id),
+    chat: await getChat(match.id),
   });
 });
 
@@ -318,8 +323,12 @@ app.post("/api/match/:id/chat", async (req, res) => {
 
 async function start() {
   await migrate();
+  await hydrateLiveMatches();
   await refundOpenEscrows();
-  app.listen(port, () => {
+  await listenInbox().catch((error) => {
+    console.warn("[ably] inbox", (error as Error).message);
+  });
+  app.listen(port, "0.0.0.0", () => {
     console.log(`betonthehorns api on :${port}`);
   });
 }

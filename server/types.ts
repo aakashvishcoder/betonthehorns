@@ -74,6 +74,8 @@ export type MatchState = {
   /** Private until the match finishes, then published so the shuffle can be checked. */
   seed: string;
   rngCounter: number;
+  /** Bumped on every broadcast so a late device can ignore an older snapshot. */
+  revision: number;
 };
 
 export type ActionType = "fold" | "check" | "call" | "raise";
