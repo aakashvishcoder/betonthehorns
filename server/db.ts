@@ -20,6 +20,22 @@ export function getPool() {
   return pool;
 }
 
+/**
+ * Runs `fn` while holding a Postgres advisory lock, so only one server instance at a time runs
+ * the schema setup. (On Vercel several instances start together; racing DROP/CREATE TRIGGER
+ * made one fail and fall back to in-memory games.)
+ */
+export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("SELECT pg_advisory_lock(424242)");
+    return await fn();
+  } finally {
+    await client.query("SELECT pg_advisory_unlock(424242)").catch(() => undefined);
+    client.release();
+  }
+}
+
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
   values?: unknown[],

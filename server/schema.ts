@@ -5,6 +5,11 @@ import { MODES, type ChainTx, type GameMode } from "./types.js";
 
 export let dbReady = false;
 
+/** The schema is already set up (checked by version): use the database without migrating. */
+export function markDbReady() {
+  dbReady = true;
+}
+
 export async function migrate() {
   try {
     await query(`
@@ -162,9 +167,13 @@ export async function migrate() {
     dbReady = true;
     console.log("[db] Timescale schema ready");
   } catch (error) {
-    dbReady = false;
+    // A schema step failing doesn't mean the database is down: if it answers, keep using it
+    // (the tables already exist). Only a dead connection falls back to in-memory games.
+    dbReady = await query("SELECT 1").then(() => true, () => false);
     console.warn(
-      "[db] Timescale is not connected. Matchmaking still runs in memory.",
+      dbReady
+        ? "[db] Schema step failed but the database is connected; using it."
+        : "[db] Timescale is not connected. Matchmaking still runs in memory.",
       (error as Error).message,
     );
   }
