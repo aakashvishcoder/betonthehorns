@@ -147,9 +147,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signingFor.current = forAddress;
     setStatus("signing");
     try {
-      const { message } = await api.authChallenge(forAddress);
+      const { nonce, message } = await api.authChallenge(forAddress);
       const signature = await signTextMessage(wallet, account, message);
-      const session = await api.login(forAddress, signature);
+      const session = await api.login(forAddress, signature, nonce);
       if (addressRef.current !== forAddress) return;
       saveSession(forAddress, session.token, session.expires);
       setSignedIn(true);

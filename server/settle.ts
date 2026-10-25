@@ -1,4 +1,3 @@
-import { revealMatch } from "./chain.js";
 import { settleRatings, STARTING_ELO } from "./elo.js";
 import {
   applySettlement,
@@ -33,7 +32,7 @@ export async function settleMatch(match: MatchState) {
     }
   });
 
-  let locks: Awaited<ReturnType<typeof escrowLocks>> = new Map();
+  let locks = new Map<string, { stake: number; preElo: number | null; settled: boolean }>();
   let elos = new Map(humans.map((player) => [player.walletId, STARTING_ELO]));
   try {
     locks = await escrowLocks(match.id);
@@ -75,6 +74,7 @@ export async function settleMatch(match: MatchState) {
       hands: match.handNumber,
       players,
     });
+    const { revealMatch } = await import("./chain.js");
     const txs = await revealMatch({
       matchId: match.id,
       mode: match.mode,

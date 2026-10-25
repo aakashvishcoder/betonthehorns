@@ -1,52 +1,68 @@
-import { randomBytes } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type express from "express";
 import { loginMessage, newNonce, verifyLogin } from "./src/auth.ts";
 
 /**
- * Signed wallet login. The client asks for a challenge, the wallet signs
- * "Bet on the Horns login: <nonce>" (free, no transaction), and the server checks the
- * ed25519 signature and returns a session token valid for 12 hours. Every wallet-scoped
- * route reads the wallet from that token; a walletId sent in a body/query is never trusted.
+ * Signed wallet login, stateless so it works across serverless instances. The client asks for a
+ * challenge, the wallet signs "Bet on the Horns login: <nonce>" (free, no transaction), and the
+ * server checks the ed25519 signature and returns a session token valid for 12 hours.
+ * Challenges and tokens carry their own expiry and an HMAC, so any instance can verify them
+ * without shared memory. Every wallet-scoped route reads the wallet from the token; a walletId
+ * sent in a body/query is never trusted.
+ *
+ * ponytail: no server-side revocation (logout just forgets the token in the browser) and a
+ * challenge can be reused within its 5 minutes by someone holding the signature; store used
+ * nonces / revoked tokens in the database if that ever matters.
  */
 const CHALLENGE_MS = 5 * 60_000;
 export const SESSION_MS = 12 * 60 * 60_000;
 
-const challenges = new Map<string, { nonce: string; expires: number }>();
-const sessions = new Map<string, { walletId: string; expires: number }>();
+/** SESSION_SECRET, or one derived from the Ably root key every instance already has. */
+function secret() {
+  const explicit = process.env.SESSION_SECRET?.trim();
+  if (explicit) return explicit;
+  const fallback = process.env.ABLY_ROOT_KEY?.trim() || process.env.DATABASE_URL?.trim();
+  if (!fallback) throw new Error("SESSION_SECRET is missing");
+  return createHash("sha256").update(`horns-session:${fallback}`).digest("hex");
+}
+
+const sign = (payload: string) => createHmac("sha256", secret()).update(payload).digest("base64url");
+
+function signedOk(payload: string, mac: string) {
+  const expected = Buffer.from(sign(payload));
+  const given = Buffer.from(mac);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
 
 export function issueChallenge(walletId: string) {
-  const nonce = newNonce();
-  challenges.set(walletId, { nonce, expires: Date.now() + CHALLENGE_MS });
+  const expires = Date.now() + CHALLENGE_MS;
+  const body = `${newNonce()}.${expires}`;
+  const nonce = `${body}.${sign(`challenge|${walletId}|${body}`)}`;
   return { nonce, message: loginMessage(nonce) };
 }
 
-/** Returns a session token, or null if the signature doesn't check out. */
-export function login(walletId: string, signatureBase64: string) {
-  const challenge = challenges.get(walletId);
-  challenges.delete(walletId); // one attempt per challenge
-  if (!challenge || challenge.expires < Date.now()) return null;
-  if (!verifyLogin(walletId, challenge.nonce, signatureBase64)) return null;
-  const token = randomBytes(32).toString("base64url");
+/** Returns a session token, or null if the challenge or signature doesn't check out. */
+export function login(walletId: string, signatureBase64: string, nonce: string) {
+  const parts = nonce.split(".");
+  if (parts.length !== 3) return null;
+  const [random, expiresText, mac] = parts as [string, string, string];
+  const body = `${random}.${expiresText}`;
+  if (!signedOk(`challenge|${walletId}|${body}`, mac)) return null;
+  if (!(Number(expiresText) > Date.now())) return null;
+  if (!verifyLogin(walletId, nonce, signatureBase64)) return null;
   const expires = Date.now() + SESSION_MS;
-  sessions.set(token, { walletId, expires });
+  const token = `${walletId}.${expires}.${sign(`session|${walletId}|${expires}`)}`;
   return { token, expires };
 }
 
-export function logout(token: string) {
-  sessions.delete(token);
-}
-
 /** The signed-in wallet for this request, or null. */
-export function sessionWallet(req: express.Request): string | null {
+export function sessionWallet(req: { header(name: string): string | undefined }): string | null {
   const header = req.header("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  const session = token ? sessions.get(token) : undefined;
-  if (!session) return null;
-  if (session.expires < Date.now()) {
-    sessions.delete(token);
-    return null;
-  }
-  return session.walletId;
+  const [walletId, expiresText, mac] = token.split(".");
+  if (!walletId || !expiresText || !mac) return null;
+  if (!(Number(expiresText) > Date.now())) return null;
+  return signedOk(`session|${walletId}|${expiresText}`, mac) ? walletId : null;
 }
 
 /** Use in handlers: the wallet, or a 401 already sent (returns null). */
@@ -58,10 +74,3 @@ export function requireWallet(req: express.Request, res: express.Response): stri
   }
   return walletId;
 }
-
-// Drop expired entries now and then so the maps don't grow forever.
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of challenges) if (v.expires < now) challenges.delete(k);
-  for (const [k, v] of sessions) if (v.expires < now) sessions.delete(k);
-}, 10 * 60_000).unref();

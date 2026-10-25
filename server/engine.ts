@@ -589,6 +589,8 @@ export function publicMatch(match: MatchState, viewer?: string) {
     revealSeed: match.status === "finished" ? match.seed : null,
     chain: match.chain ?? [],
     revision: match.revision ?? 0,
+    ranked: match.ranked,
+    places: match.places,
     players: match.players.map((player) => {
       const mine = player.walletId === viewer;
       const show = Boolean(

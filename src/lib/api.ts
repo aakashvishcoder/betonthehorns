@@ -182,7 +182,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     window.dispatchEvent(new Event(SESSION_EXPIRED));
   }
   if (!response.ok) {
-    throw new Error(data.error || response.statusText);
+    throw Object.assign(new Error(data.error || response.statusText), { status: response.status, body: data });
   }
   return data;
 }
@@ -206,10 +206,10 @@ export const api = {
   health: () => request<{ ok: boolean; db: boolean }>("/api/health"),
   authChallenge: (walletId: string) =>
     request<{ nonce: string; message: string }>(`/api/auth/challenge/${walletId}`),
-  login: (walletId: string, signature: string) =>
+  login: (walletId: string, signature: string, nonce: string) =>
     request<{ walletId: string; token: string; expires: number }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ walletId, signature }),
+      body: JSON.stringify({ walletId, signature, nonce }),
     }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   wallet: (walletId: string) =>

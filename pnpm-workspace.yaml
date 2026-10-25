@@ -1,8 +1,8 @@
 packages:
   - .
 overrides:
-  # Preserve compatibility with the working Framer Motion 12.23.22 prototype.
-  motion-dom: 12.23.21
+  # Framer Motion 12.23.22 imports activeAnimations, which landed in motion-dom 12.23.23.
+  motion-dom: 12.23.23
   motion-utils: 12.23.6
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'

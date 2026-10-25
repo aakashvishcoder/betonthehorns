@@ -127,19 +127,29 @@ export default function TablePage() {
   const [draftMessage, setDraftMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const revision = useRef(0);
+  const revision = useRef(-1);
+  const matchRef = useRef<PublicMatch | null>(null);
 
   function remember(next: PublicMatch, hole?: PrivateView | null) {
-    if ((next.revision ?? 0) < revision.current) return;
-    revision.current = next.revision ?? revision.current;
+    if (matchRef.current?.status === "finished" && next.status !== "finished") return;
+    const rev = next.revision ?? 0;
+    // Each update arrives twice with the same revision: the public table copy (no hole cards)
+    // and your private copy. Never drop the private one just because the public one won the
+    // race, or your cards vanish until the next change.
+    if (rev < revision.current && next.status !== "finished") return;
+    if (rev === revision.current && !hole && next.status !== "finished") return;
+    revision.current = Math.max(revision.current, rev);
+    matchRef.current = next;
     setMatch(next);
-    if (hole) setYou(hole);
+    if (next.status === "finished") setYou(null);
+    else if (hole) setYou(hole);
   }
 
   useEffect(() => {
     if (!matchId || !address) return;
     let cancelled = false;
-    revision.current = 0;
+    revision.current = -1;
+    matchRef.current = null;
 
     const applyState = (data: unknown) => {
       const payload = data as {
@@ -162,7 +172,7 @@ export default function TablePage() {
         .match(matchId, address)
         .then((payload) => {
           if (cancelled) return;
-          const first = revision.current === 0;
+          const first = revision.current < 0;
           remember(payload.match, payload.you);
           if (first) setError(null);
           setMessages((current) => {
@@ -172,7 +182,7 @@ export default function TablePage() {
           });
         })
         .catch((err: Error) => {
-          if (!cancelled && revision.current === 0) setError(err.message);
+          if (!cancelled && revision.current < 0) setError(err.message);
         });
     };
 
@@ -232,6 +242,7 @@ export default function TablePage() {
     return new Set(match.winners.filter((winner) => winner.amount > 0).map((winner) => winner.walletId));
   }, [match]);
 
+  const over = match?.status === "finished" || match?.street === "complete";
   const clampRaise = (value: number) =>
     Math.min(maxRaise, Math.max(minRaise, Math.round(value)));
   const totalPot = match?.pot ?? 0;
@@ -244,7 +255,7 @@ export default function TablePage() {
   ];
 
   async function act(type: "fold" | "check" | "call" | "raise", amount?: number) {
-    if (!address || !matchId || busy) return;
+    if (!address || !matchId || busy || over) return;
     setBusy(true);
     setError(null);
     try {
@@ -284,7 +295,7 @@ export default function TablePage() {
     }
   }
 
-  const myTurn = legal.canAct;
+  const myTurn = Boolean(legal.canAct && !over);
   const streetLabel = match?.street ?? "dealing";
 
   return (
@@ -396,15 +407,18 @@ export default function TablePage() {
               const mine = seat.walletId === address;
               const name = seat.name || (mine ? displayAddress ?? shortAddress(seat.walletId) : shortAddress(seat.walletId));
               const acting = match?.actionIndex === index;
+              // Your seat always shows your private cards, so the public copy of the table
+              // (face-down placeholders) can't swap them out mid-hand.
+              const holeCards = mine && myHole.length ? myHole : seat.hole;
               return (
                 <div key={seat.walletId}>
                   <div
                     className={`felt-seat ${mine ? "is-me" : ""} ${acting ? "is-acting" : ""} ${seat.folded || seat.busted ? "is-folded" : ""}`}
                     style={style}
                   >
-                    {!seat.folded && seat.hole && (
+                    {!seat.folded && holeCards && (
                       <div className="felt-seat-cards">
-                        {seat.hole.map((card, cardIndex) => (
+                        {holeCards.map((card, cardIndex) => (
                           <LiveCard
                             key={`${match?.handNumber ?? 0}-${seat.walletId}-${cardIndex}-${card}`}
                             code={card}
@@ -533,7 +547,7 @@ export default function TablePage() {
           )}
 
           <div className="felt-actions" aria-label="Your action">
-            {match?.status === "finished" ? (
+            {over ? (
               <div className="felt-action-buttons">
                 <p className="felt-result" aria-live="polite">
                   {match.ranked ? "Ranked game: Elo updates on your profile" : "Practice game: unranked"}

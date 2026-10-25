@@ -5,9 +5,9 @@ import type { ActionInput, MatchState } from "./types.js";
 
 /**
  * Hand histories for post-game analysis: every decision with the pot, price and stack at that
- * moment, plus each hand's cards and result. Kept in memory while the match runs and saved to
- * hand_histories when it ends. All hole cards are stored; viewFor() hides the ones a player
- * couldn't have seen.
+ * moment, plus each hand's cards and result. Kept in the match itself (match.history, saved with
+ * the live state) so any serverless instance can add to it, and copied to hand_histories when
+ * the match ends. All hole cards are stored; viewFor() hides the ones a player couldn't see.
  */
 export type HistoryAction = {
   street: string;
@@ -40,11 +40,8 @@ export type MatchHistory = {
   hands: HistoryHand[];
 };
 
-const live = new Map<string, HistoryHand[]>();
-
 function currentHand(match: MatchState) {
-  const hands = live.get(match.id) ?? [];
-  live.set(match.id, hands);
+  const hands = (match.history ??= []);
   let hand = hands.at(-1);
   if (!hand || hand.hand !== match.handNumber) {
     hand = {
@@ -82,7 +79,7 @@ export function recordAction(match: MatchState, walletId: string, input: ActionI
 
 /** Call on every broadcast: fills in the board, showdown and winners once a hand is decided. */
 export function syncHistory(match: MatchState) {
-  const hand = live.get(match.id)?.at(-1);
+  const hand = match.history?.at(-1);
   if (!hand || hand.hand !== match.handNumber) return;
   if (match.street === "showdown" || match.street === "complete") {
     hand.board = match.board.map(cardCode);
@@ -93,11 +90,10 @@ export function syncHistory(match: MatchState) {
   }
 }
 
-/** When a match ends: save its history (ranked and practice) and drop it from memory. */
+/** When a match ends: save its history (ranked and practice) for analysis. */
 export async function saveHistory(match: MatchState) {
   syncHistory(match);
-  const hands = live.get(match.id) ?? [];
-  live.delete(match.id);
+  const hands = match.history ?? [];
   if (!dbReady || hands.length === 0) return;
   const history: MatchHistory = {
     matchId: match.id,
@@ -111,11 +107,6 @@ export async function saveHistory(match: MatchState) {
     `INSERT INTO hand_histories (match_id, history) VALUES ($1, $2) ON CONFLICT (match_id) DO NOTHING`,
     [match.id, JSON.stringify(history)],
   ).catch((error) => console.warn("[db] hand history", (error as Error).message));
-}
-
-/** The hands recorded so far for a running match. */
-export function liveHands(matchId: string): readonly HistoryHand[] {
-  return live.get(matchId) ?? [];
 }
 
 export async function loadHistory(matchId: string): Promise<MatchHistory | null> {

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { describeMatch, draws } from "./analysis.js";
 import { applyAction, continueAfterShowdown, createMatch, legalActions, stepRunout } from "./engine.js";
-import { liveHands, recordAction, syncHistory, viewFor, type MatchHistory } from "./history.js";
+import { recordAction, syncHistory, viewFor, type MatchHistory } from "./history.js";
 import type { ActionInput, MatchState } from "./types.js";
 
 /** Plays a heads-up match (A always shoves, B always calls) through the recorder. */
@@ -37,7 +37,7 @@ function playRecorded(): MatchState {
 test("hand history records every decision with pot, price and stack", () => {
   const match = playRecorded();
   assert.equal(match.status, "finished");
-  const hands = liveHands(match.id);
+  const hands = match.history ?? [];
   assert.ok(hands.length >= 1);
   for (const h of hands) {
     assert.equal(Object.keys(h.holes).length, 2, "both players' cards stored server-side");

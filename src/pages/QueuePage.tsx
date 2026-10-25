@@ -57,8 +57,11 @@ export default function QueuePage() {
         setQueue(result.queue);
         if (result.status === "playing" && result.matchId) goTable(result.matchId);
       })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
+      .catch((err: Error & { body?: { matchId?: string } }) => {
+        if (cancelled) return;
+        // Already seated somewhere: one game at a time, so go back to that table.
+        if (err.body?.matchId) goTable(err.body.matchId);
+        else setError(err.message);
       });
 
     const stopQueue = watchGlobalQueue(address, modeId, mode?.seats ?? 2, (data) => {
@@ -96,7 +99,8 @@ export default function QueuePage() {
     return null;
   }
 
-  const waiting = queue?.count ?? 1;
+  // You're on this page, so you count even before your presence reaches Ably.
+  const waiting = Math.max(1, queue?.count ?? 1);
 
   return (
     <PokerAppShell section="queue">

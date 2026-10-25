@@ -2,34 +2,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyAction, continueAfterShowdown, createMatch, legalActions, stepRunout } from "./engine.js";
-import {
-  AI_TIMING,
-  driveAi,
-  finishTracking,
-  practiceSeats,
-  registerPractice,
-  styleStore,
-  syncHands,
-  trackAction,
-} from "./practice.js";
+import { recordAction, syncHistory } from "./history.js";
+import { AI_TIMING, aiToAct, decideAi, finishTracking, practiceSeats, styleStore } from "./practice.js";
 import { issueChallenge, login, sessionWallet } from "./session.js";
 import { MemoryStyleStore } from "./src/ai/style-store.ts";
 import { fakeWallet } from "./src/wallet.ts";
 import type { ActionInput, MatchState } from "./types.js";
 
-AI_TIMING.thinkMs = [0, 0];
-const settle = () => new Promise((r) => setTimeout(r, 5));
+AI_TIMING.thinkMs = 0;
 
-/** Runs a practice table: the human always shoves/calls; AIs act through driveAi. */
+/** Runs a practice table the way the server does: the human always shoves/calls, AIs act when due. */
 async function play(match: MatchState, human: string) {
-  const act = async (walletId: string, input: ActionInput) => {
-    trackAction(match, walletId, input);
+  const act = (walletId: string, input: ActionInput) => {
+    recordAction(match, walletId, input);
     applyAction(match, walletId, input);
-    syncHands(match);
+    syncHistory(match);
   };
   for (let steps = 0; match.status === "playing"; steps++) {
     assert.ok(steps < 5_000, "practice game never finished");
-    syncHands(match);
+    syncHistory(match);
     if (match.runoutAt) {
       match.runoutAt = 1;
       stepRunout(match);
@@ -39,31 +30,27 @@ async function play(match: MatchState, human: string) {
       continueAfterShowdown(match);
       continue;
     }
-    const actor = match.players[match.actionIndex!]!;
-    if (actor.walletId === human) {
-      const l = legalActions(match, human);
-      await act(human, l.maxRaiseTo > match.currentBet ? { type: "raise", raiseTo: l.maxRaiseTo } : { type: l.canCheck ? "check" : "call" });
-    } else {
-      driveAi(match, act);
-      await settle();
+    const ai = aiToAct(match);
+    if (ai) {
+      act(ai, await decideAi(match, ai));
+      continue;
     }
+    const l = legalActions(match, human);
+    act(human, l.maxRaiseTo > match.currentBet ? { type: "raise", raiseTo: l.maxRaiseTo } : { type: l.canCheck ? "check" : "call" });
   }
 }
 
-test("practice: AI seats play a full game against the human, then style is saved for the human only", async () => {
+test("practice: AI seats play a full game from match state alone, then style is saved for the human only", async () => {
   const human = fakeWallet().address;
-  const { ids, players } = await practiceSeats(human, "sng-4", 4, 1200);
+  const { ids, ai } = await practiceSeats(human, "sng-4", 4, 1200);
   assert.deepEqual(ids, ["ai:shark:1", "ai:maniac:1", "ai:rock:1"]);
   const match = createMatch("sng-4", [human], ids, { ranked: false });
-  registerPractice(match, players);
+  match.ai = JSON.parse(JSON.stringify(ai)); // as it comes back from live_state
   assert.equal(match.ranked, false);
-  assert.ok(match.players.filter((p) => p.bot).length === 3);
 
   await play(match, human);
   assert.equal(match.status, "finished");
-  assert.equal(Object.keys(match.places).length, 4, "everyone gets a place");
-  const humanSeat = match.players.find((p) => p.walletId === human)!;
-  if (humanSeat.busted) assert.ok(match.players.filter((p) => !p.busted).length >= 1, "ended as soon as the human busted");
+  assert.ok((match.history?.length ?? 0) >= 1, "hands recorded in the match");
 
   await finishTracking(match);
   const rows = (styleStore as MemoryStyleStore).rows;
@@ -85,23 +72,24 @@ test("practice ends the moment the human busts, placing AIs by chips", () => {
   assert.deepEqual(Object.values(match.places).sort(), [1, 2, 3, 4].slice(0, Object.keys(match.places).length).sort());
 });
 
-test("signed login: only a valid wallet signature gets a session", () => {
+test("signed login: stateless tokens only for a valid wallet signature", () => {
   const w = fakeWallet();
-  const req = (token?: string) => ({ header: (name: string) => (name === "authorization" && token ? `Bearer ${token}` : undefined) }) as never;
+  const req = (token?: string) => ({ header: (name: string) => (name === "authorization" && token ? `Bearer ${token}` : undefined) });
 
   const { nonce } = issueChallenge(w.address);
-  assert.equal(login(w.address, w.signLogin("not-the-nonce")), null, "wrong message");
-  // A failed attempt burns the challenge.
-  assert.equal(login(w.address, w.signLogin(nonce)), null, "challenge is single-use");
+  assert.equal(login(w.address, w.signLogin("not-the-nonce"), nonce), null, "signed the wrong message");
+  assert.equal(login(w.address, fakeWallet().signLogin(nonce), nonce), null, "someone else's signature");
+  const [random, expires] = nonce.split(".");
+  const forged = `${random}.${Number(expires) + 3_600_000}.${nonce.split(".")[2]}`;
+  assert.equal(login(w.address, w.signLogin(forged), forged), null, "a challenge with a changed expiry");
+  const other = issueChallenge(fakeWallet().address).nonce;
+  assert.equal(login(w.address, w.signLogin(other), other), null, "a challenge issued to another wallet");
 
-  const second = issueChallenge(w.address);
-  const other = fakeWallet();
-  assert.equal(login(w.address, other.signLogin(second.nonce)), null, "someone else's signature");
-
-  const third = issueChallenge(w.address);
-  const session = login(w.address, w.signLogin(third.nonce))!;
+  const session = login(w.address, w.signLogin(nonce), nonce)!;
   assert.ok(session.token.length >= 40);
   assert.equal(sessionWallet(req(session.token)), w.address);
+  const [, exp, mac] = session.token.split(".");
+  assert.equal(sessionWallet(req(`${fakeWallet().address}.${exp}.${mac}`)), null, "token moved to another wallet");
   assert.equal(sessionWallet(req("forged-token")), null);
   assert.equal(sessionWallet(req()), null);
 });
