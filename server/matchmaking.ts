@@ -673,6 +673,8 @@ async function advanceMatch(id: string, move?: Move) {
   let match: MatchState | undefined;
   try {
     await client.query("BEGIN");
+    // Never queue behind a stuck lock for long: a refresh falls back to reading, a move retries.
+    await client.query("SET LOCAL lock_timeout = '8s'");
     const locked = await client.query<{ live_state: unknown }>(
       `SELECT live_state FROM matches WHERE id = $1 AND status = 'playing' FOR UPDATE`,
       [id],
@@ -716,6 +718,9 @@ async function advanceMatch(id: string, move?: Move) {
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (move && (error as { code?: string }).code === "55P03") {
+      throw new Error("The table is busy. Try that again.");
+    }
     if (move) throw error;
     console.warn("[table] advance", (error as Error).message);
     return takeLiveMatch(id);
@@ -793,13 +798,17 @@ export function pulse() {
   tick();
 }
 
-setInterval(tick, 250);
-
-setInterval(() => {
-  void Promise.all(MODES.map((mode) => publishQueue(mode))).catch((error) =>
-    console.warn("[queue]", (error as Error).message),
-  );
-}, 5000);
+// Background timers only on a long-running server (local, Vultr). On Vercel an instance is
+// frozen after each response, and a timer caught mid-transaction held a table's lock for ~20s;
+// there, tables advance on every player request and the 2-second table refresh instead.
+if (!process.env.VERCEL) {
+  setInterval(tick, 250);
+  setInterval(() => {
+    void Promise.all(MODES.map((mode) => publishQueue(mode))).catch((error) =>
+      console.warn("[queue]", (error as Error).message),
+    );
+  }, 5000);
+}
 
 export function listMatches() {
   return [...matches.values()].map((match) => ({
