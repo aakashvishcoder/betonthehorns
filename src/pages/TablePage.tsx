@@ -11,6 +11,7 @@ import {
   type PublicMatch,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useBlockCoach } from "@/components/coach/coachGate";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
 import { cardArt, cardName, deckArt, formatChips } from "@/lib/poker-design";
 import { sendInbox, subscribeChannel } from "@/lib/realtime";
@@ -199,6 +200,9 @@ export default function TablePage() {
       stopChat();
     };
   }, [address, matchId]);
+
+  // The AI coach is off (face-down) at ranked tables, and allowed in practice vs AI.
+  useBlockCoach(match?.ranked !== false);
 
   const mode = getGameMode(
     match && isGameModeId(match.mode) ? match.mode : "hands-up",
@@ -530,6 +534,9 @@ export default function TablePage() {
           <div className="felt-actions" aria-label="Your action">
             {match?.status === "finished" ? (
               <div className="felt-action-buttons">
+                <p className="felt-result" aria-live="polite">
+                  {match.ranked ? "Ranked game: Elo updates on your profile" : "Practice game: unranked"}
+                </p>
                 <Link href="/play" className="club-button">
                   Back to dashboard
                 </Link>

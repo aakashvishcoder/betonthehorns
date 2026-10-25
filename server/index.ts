@@ -24,11 +24,19 @@ import {
   joinQueue,
   leaveQueue,
   playAction,
+  startPractice,
   refreshSeatName,
   queueSnapshot,
   walletMatch,
 } from "./matchmaking.js";
 import { privateView, publicMatch } from "./engine.js";
+import { issueChallenge, login, logout, requireWallet, sessionWallet } from "./session.js";
+import { dailyPuzzles, publicPuzzle, today, type Choice } from "./puzzles.js";
+import { attemptsFor, leaderboard, migratePuzzles, saveAttempt, streakFor } from "./puzzle-store.js";
+import { seatLabel } from "./names.js";
+import { coachHandler } from "./src/coach.ts";
+import { NewsFeed, newsHandler } from "./src/news.ts";
+import { CoachSearch } from "./src/serpapi.ts";
 import { MODES, type ActionType, type GameMode } from "./types.js";
 
 const port = Number(process.env.PORT || 4000);
@@ -55,13 +63,6 @@ function isWalletId(value: unknown): value is string {
   );
 }
 
-function readWallet(req: express.Request) {
-  const fromBody = (req.body as { walletId?: string } | undefined)?.walletId;
-  const fromQuery = typeof req.query.walletId === "string" ? req.query.walletId : undefined;
-  const fromHeader = req.header("x-wallet-id");
-  return fromBody || fromQuery || fromHeader;
-}
-
 const app = express();
 app.use(
   cors({
@@ -71,6 +72,22 @@ app.use(
     credentials: true,
   }),
 );
+// AI coach (Muse) and news (SerpApi). Mounted before express.json(): these read the raw body.
+const serpKey = process.env.SERPAPI_KEY;
+const coach = coachHandler({
+  apiKey: process.env.MODEL_API_KEY,
+  walletOf: (req) => sessionWallet(req as express.Request),
+  inRankedGame: (wallet) => {
+    const match = walletMatch(wallet);
+    return match?.status === "playing" && match.ranked;
+  },
+  search: serpKey ? new CoachSearch(serpKey) : undefined,
+  log: (msg) => console.log(`[coach] ${msg}`),
+});
+const news = newsHandler(new NewsFeed(serpKey, { log: (msg) => console.log(`[news] ${msg}`) }));
+app.post("/api/coach", (req, res) => void coach(req, res));
+app.get("/api/news", (req, res) => void news(req, res));
+
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
@@ -81,6 +98,35 @@ app.get("/api/health", (_req, res) => {
     matchmaking: "global-ably",
     db: dbReady,
   });
+});
+
+// Signed wallet login: sign a one-time message (free, no transaction) for a 12-hour session.
+app.get("/api/auth/challenge/:walletId", (req, res) => {
+  if (!isWalletId(req.params.walletId)) {
+    res.status(400).json({ error: "Invalid wallet" });
+    return;
+  }
+  res.json(issueChallenge(req.params.walletId));
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const { walletId, signature } = req.body as { walletId?: string; signature?: string };
+  if (!isWalletId(walletId) || typeof signature !== "string") {
+    res.status(400).json({ error: "walletId and signature required" });
+    return;
+  }
+  const session = login(walletId, signature);
+  if (!session) {
+    res.status(401).json({ error: "Signature check failed. Please sign in again." });
+    return;
+  }
+  res.json({ walletId, ...session });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const header = req.header("authorization") ?? "";
+  if (header.startsWith("Bearer ")) logout(header.slice(7));
+  res.json({ ok: true });
 });
 
 app.get("/api/wallet/:walletId", async (req, res) => {
@@ -106,10 +152,11 @@ app.get("/api/wallet/:walletId", async (req, res) => {
 
 app.post("/api/profile/name", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const displayName = (req.body as { displayName?: string }).displayName;
-    if (!isWalletId(walletId) || typeof displayName !== "string") {
-      res.status(400).json({ error: "walletId and displayName required" });
+    if (typeof displayName !== "string") {
+      res.status(400).json({ error: "displayName required" });
       return;
     }
     if (!dbReady) {
@@ -189,10 +236,11 @@ app.get("/api/profile/:walletId", async (req, res) => {
 
 app.post("/api/profile/showcase", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const shown = (req.body as { shown?: unknown }).shown;
-    if (!isWalletId(walletId) || !Array.isArray(shown) || shown.some((key) => typeof key !== "string")) {
-      res.status(400).json({ error: "walletId and shown keys required" });
+    if (!Array.isArray(shown) || shown.some((key) => typeof key !== "string")) {
+      res.status(400).json({ error: "shown keys required" });
       return;
     }
     if (!dbReady) {
@@ -216,11 +264,8 @@ app.post("/api/profile/showcase", async (req, res) => {
 
 app.post("/api/ably/token", async (req, res) => {
   try {
-    const walletId = readWallet(req);
-    if (!isWalletId(walletId)) {
-      res.status(400).json({ error: "walletId required" });
-      return;
-    }
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     res.json(await tokenRequest(walletId));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -237,10 +282,11 @@ app.get("/api/queue/:mode", async (req, res) => {
 
 app.post("/api/queue", async (req, res) => {
   try {
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const { mode } = req.body as { mode?: string };
-    const walletId = readWallet(req);
-    if (!isWalletId(walletId) || !isMode(mode)) {
-      res.status(400).json({ error: "walletId and mode required" });
+    if (!isMode(mode)) {
+      res.status(400).json({ error: "mode required" });
       return;
     }
     res.json(await joinQueue(walletId, mode));
@@ -251,11 +297,8 @@ app.post("/api/queue", async (req, res) => {
 
 app.delete("/api/queue", async (req, res) => {
   try {
-    const walletId = readWallet(req);
-    if (!isWalletId(walletId)) {
-      res.status(400).json({ error: "walletId required" });
-      return;
-    }
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     await leaveQueue(walletId);
     res.json({ ok: true });
   } catch (error) {
@@ -292,10 +335,11 @@ app.get("/api/match/:id", async (req, res) => {
 
 app.post("/api/match/:id/action", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const { type, raiseTo } = req.body as { type?: ActionType; raiseTo?: number };
-    if (!isWalletId(walletId) || !type) {
-      res.status(400).json({ error: "walletId and type required" });
+    if (!type) {
+      res.status(400).json({ error: "type required" });
       return;
     }
     res.json(await playAction(req.params.id, walletId, { type, raiseTo }));
@@ -306,15 +350,80 @@ app.post("/api/match/:id/action", async (req, res) => {
 
 app.post("/api/match/:id/chat", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const text = (req.body as { text?: string }).text;
-    if (!isWalletId(walletId) || typeof text !== "string") {
-      res.status(400).json({ error: "walletId and text required" });
+    if (typeof text !== "string") {
+      res.status(400).json({ error: "text required" });
       return;
     }
     res.json({ messages: await addChat(req.params.id, walletId, text) });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+// Daily puzzles: same five for everyone each UTC day. Answers never leave the server until you
+// commit to a choice; signed-in players get one try per puzzle, a streak and the leaderboard.
+app.get("/api/puzzles/today", async (req, res) => {
+  try {
+    const day = today();
+    const puzzles = dailyPuzzles(day);
+    const walletId = sessionWallet(req);
+    const attempts = walletId ? await attemptsFor(walletId, day) : [];
+    res.json({
+      day,
+      puzzles: puzzles.map(publicPuzzle),
+      attempts: attempts.map((a) => ({ ...a, solution: puzzles[a.index - 1]!.solution })),
+      streak: walletId ? await streakFor(walletId, day) : 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/puzzles/answer", async (req, res) => {
+  try {
+    const { day, index, choice } = req.body as { day?: string; index?: number; choice?: string };
+    if (day !== today()) {
+      res.status(410).json({ error: "That puzzle set has ended. Reload for today's puzzles." });
+      return;
+    }
+    const puzzle = dailyPuzzles(day)[Number(index) - 1];
+    if (!puzzle || !puzzle.options.some((o) => o.id === choice)) {
+      res.status(400).json({ error: "Unknown puzzle or choice" });
+      return;
+    }
+    const correct = choice === puzzle.solution.answer;
+    const walletId = sessionWallet(req);
+    if (walletId) {
+      const saved = await saveAttempt(walletId, day, { index: puzzle.index, choice: choice as Choice, correct });
+      if (!saved) {
+        const previous = (await attemptsFor(walletId, day)).find((a) => a.index === puzzle.index)!;
+        res.status(409).json({ error: "You've already answered this one.", ...previous, solution: puzzle.solution });
+        return;
+      }
+    }
+    res.json({
+      index: puzzle.index,
+      choice,
+      correct,
+      solution: puzzle.solution,
+      saved: Boolean(walletId),
+      streak: walletId ? await streakFor(walletId, day) : 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.get("/api/puzzles/leaderboard", async (_req, res) => {
+  try {
+    const day = today();
+    const rows = await leaderboard(day);
+    res.json({ day, rows: rows.map((r) => ({ ...r, name: seatLabel(r.walletId) })) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
   }
 });
 
