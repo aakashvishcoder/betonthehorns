@@ -125,19 +125,25 @@ export default function TablePage() {
   const [draftMessage, setDraftMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const revision = useRef(0);
+  const revision = useRef(-1);
+  const matchRef = useRef<PublicMatch | null>(null);
 
   function remember(next: PublicMatch, hole?: PrivateView | null) {
-    if ((next.revision ?? 0) < revision.current) return;
-    revision.current = next.revision ?? revision.current;
+    if (matchRef.current?.status === "finished" && next.status !== "finished") return;
+    const rev = next.revision ?? 0;
+    if (rev <= revision.current && next.status !== "finished") return;
+    revision.current = Math.max(revision.current, rev);
+    matchRef.current = next;
     setMatch(next);
-    if (hole) setYou(hole);
+    if (next.status === "finished") setYou(null);
+    else if (hole) setYou(hole);
   }
 
   useEffect(() => {
     if (!matchId || !address) return;
     let cancelled = false;
-    revision.current = 0;
+    revision.current = -1;
+    matchRef.current = null;
 
     const applyState = (data: unknown) => {
       const payload = data as {
@@ -160,7 +166,7 @@ export default function TablePage() {
         .match(matchId, address)
         .then((payload) => {
           if (cancelled) return;
-          const first = revision.current === 0;
+          const first = revision.current < 0;
           remember(payload.match, payload.you);
           if (first) setError(null);
           setMessages((current) => {
@@ -170,7 +176,7 @@ export default function TablePage() {
           });
         })
         .catch((err: Error) => {
-          if (!cancelled && revision.current === 0) setError(err.message);
+          if (!cancelled && revision.current < 0) setError(err.message);
         });
     };
 
@@ -227,6 +233,7 @@ export default function TablePage() {
     return new Set(match.winners.filter((winner) => winner.amount > 0).map((winner) => winner.walletId));
   }, [match]);
 
+  const over = match?.status === "finished" || match?.street === "complete";
   const clampRaise = (value: number) =>
     Math.min(maxRaise, Math.max(minRaise, Math.round(value)));
   const totalPot = match?.pot ?? 0;
@@ -239,7 +246,7 @@ export default function TablePage() {
   ];
 
   async function act(type: "fold" | "check" | "call" | "raise", amount?: number) {
-    if (!address || !matchId || busy) return;
+    if (!address || !matchId || busy || over) return;
     setBusy(true);
     setError(null);
     try {
@@ -279,7 +286,7 @@ export default function TablePage() {
     }
   }
 
-  const myTurn = legal.canAct;
+  const myTurn = Boolean(legal.canAct && !over);
   const streetLabel = match?.street ?? "dealing";
 
   return (
@@ -528,7 +535,7 @@ export default function TablePage() {
           )}
 
           <div className="felt-actions" aria-label="Your action">
-            {match?.status === "finished" ? (
+            {over ? (
               <div className="felt-action-buttons">
                 <Link href="/play" className="club-button">
                   Back to dashboard

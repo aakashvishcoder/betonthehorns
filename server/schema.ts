@@ -1,4 +1,4 @@
-import { pool, query } from "./db.js";
+import { getPool, query } from "./db.js";
 import { STARTING_ELO } from "./elo.js";
 import { cleanDisplayName, rememberName } from "./names.js";
 import { MODES, type ChainTx, type GameMode } from "./types.js";
@@ -102,9 +102,6 @@ export async function migrate() {
     );
   `);
 
-  await tryHypertable("elo_history");
-  await tryHypertable("match_events");
-
   await query(`
     CREATE INDEX IF NOT EXISTS elo_history_wallet_mode_time
       ON elo_history (wallet_id, mode, time DESC);
@@ -137,6 +134,31 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS match_chat_match_at
       ON match_chat (match_id, at);
   `);
+    await query(`
+      CREATE OR REPLACE FUNCTION prevent_reopen_match()
+      RETURNS trigger AS $$
+      BEGIN
+        IF OLD.status = 'finished' AND NEW.status = 'playing' THEN
+          NEW.status := 'finished';
+          NEW.live_state := NULL;
+          NEW.finished_at := COALESCE(OLD.finished_at, NOW());
+          IF NEW.snapshot IS NOT NULL THEN
+            NEW.snapshot := jsonb_set(NEW.snapshot, '{status}', '"finished"');
+          END IF;
+        END IF;
+        IF OLD.status = 'finished' THEN
+          NEW.live_state := NULL;
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await query(`DROP TRIGGER IF EXISTS matches_no_reopen ON matches`);
+    await query(`
+      CREATE TRIGGER matches_no_reopen
+      BEFORE UPDATE ON matches
+      FOR EACH ROW EXECUTE FUNCTION prevent_reopen_match();
+    `);
     dbReady = true;
     console.log("[db] Timescale schema ready");
   } catch (error) {
@@ -215,7 +237,7 @@ export async function playingWalletIds() {
 
 /** Takes the oldest seats, or leaves the queue untouched when it is short. */
 export async function claimQueueSeats(mode: GameMode, need: number, allowed?: string[]) {
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const listed = await client.query<{ wallet_id: string }>(
@@ -353,7 +375,7 @@ export async function lockEscrow(
   stakes: { walletId: string; stake: number }[],
 ) {
   if (!dbReady) return;
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     for (const seat of stakes) {
@@ -433,6 +455,9 @@ export async function refundOpenEscrows() {
      FROM elo_locks l
      LEFT JOIN matches m ON m.id = l.match_id
      WHERE l.settled = FALSE
+       AND NOT EXISTS (
+         SELECT 1 FROM elo_history h WHERE h.match_id = l.match_id
+       )
        AND (m.id IS NULL OR m.status <> 'playing' OR m.live_state IS NULL)`,
   );
   for (const lock of open.rows) {
@@ -546,6 +571,18 @@ export async function getProfile(walletId: string) {
     `SELECT mode, elo, games, wins, hands FROM player_stats WHERE wallet_id = $1`,
     [walletId],
   );
+  const latest = await query<{ mode: GameMode; elo: number }>(
+    `SELECT DISTINCT ON (mode) mode, elo
+     FROM elo_history
+     WHERE wallet_id = $1
+     ORDER BY mode, time DESC`,
+    [walletId],
+  );
+  const settledElo = new Map(latest.rows.map((row) => [row.mode, row.elo]));
+  const shownStats = stats.rows.map((row) => ({
+    ...row,
+    elo: settledElo.get(row.mode) ?? row.elo,
+  }));
   const history = await query<{
     time: Date;
     mode: GameMode;
@@ -564,7 +601,7 @@ export async function getProfile(walletId: string) {
   );
   return {
     displayName: named.rows[0]?.display_name ?? null,
-    stats: stats.rows,
+    stats: shownStats,
     recent: await withMatchChain(
       history.rows.map((row) => ({
         time: row.time.toISOString(),
@@ -641,13 +678,27 @@ export type ChatLine = { name: string; text: string; at: number };
 
 export async function saveLiveMatch(id: string, live: unknown) {
   if (!dbReady) return;
-  await query(`UPDATE matches SET live_state = $2 WHERE id = $1`, [id, live]);
+  const status =
+    live && typeof live === "object" && "status" in live && (live as { status?: string }).status === "finished"
+      ? "finished"
+      : "playing";
+  await query(
+    `UPDATE matches
+     SET live_state = CASE WHEN $3 = 'finished' THEN NULL ELSE $2 END,
+         status = CASE WHEN $3 = 'finished' THEN 'finished' ELSE status END,
+         finished_at = CASE WHEN $3 = 'finished' THEN COALESCE(finished_at, NOW()) ELSE finished_at END
+     WHERE id = $1
+       AND (status <> 'finished' OR $3 = 'finished')`,
+    [id, live, status],
+  );
 }
 
 export async function loadLiveMatchRow(id: string) {
   if (!dbReady) return null;
   const result = await query<{ live_state: unknown }>(
-    `SELECT live_state FROM matches WHERE id = $1 AND live_state IS NOT NULL`,
+    `SELECT live_state
+     FROM matches
+     WHERE id = $1 AND status = 'playing' AND live_state IS NOT NULL`,
     [id],
   );
   return result.rows[0]?.live_state ?? null;
@@ -691,6 +742,7 @@ export async function clearQueueSeats() {
 
 export async function refundMatchLocks(matchId: string) {
   if (!dbReady) return;
+  if (await matchAlreadySettled(matchId)) return;
   const open = await query<{ wallet_id: string; mode: GameMode; stake: number }>(
     `SELECT wallet_id, mode, stake FROM elo_locks WHERE match_id = $1 AND settled = FALSE`,
     [matchId],
@@ -714,7 +766,11 @@ export async function closeLiveMatch(matchId: string) {
     `UPDATE matches
      SET status = 'finished',
          live_state = NULL,
-         finished_at = NOW()
+         finished_at = COALESCE(finished_at, NOW()),
+         snapshot = CASE
+           WHEN snapshot IS NULL THEN snapshot
+           ELSE jsonb_set(snapshot, '{status}', '"finished"')
+         END
      WHERE id = $1`,
     [matchId],
   );
@@ -775,8 +831,9 @@ export async function saveMatchSnapshot(
      SET status = $2,
          snapshot = $3,
          winner_wallet_id = COALESCE($4, winner_wallet_id),
-         finished_at = CASE WHEN $2 = 'finished' THEN NOW() ELSE finished_at END
-     WHERE id = $1`,
+         finished_at = CASE WHEN $2 = 'finished' THEN COALESCE(finished_at, NOW()) ELSE finished_at END
+     WHERE id = $1
+       AND (status <> 'finished' OR $2 = 'finished')`,
     [id, status, snapshot, winnerWalletId ?? null],
   );
 }
