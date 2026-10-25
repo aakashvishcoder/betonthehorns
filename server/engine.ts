@@ -189,7 +189,7 @@ export function createMatch(
     handStartStacks: {},
     ...(() => {
       const commit = newCommit();
-      return { commitHash: commit.commitHash, seed: commit.seed, rngCounter: 0 };
+      return { commitHash: commit.commitHash, seed: commit.seed, rngCounter: 0, revision: 0 };
     })(),
   };
   startHand(match);
@@ -588,8 +588,7 @@ export function publicMatch(match: MatchState, viewer?: string) {
     commitHash: match.commitHash,
     revealSeed: match.status === "finished" ? match.seed : null,
     chain: match.chain ?? [],
-    ranked: match.ranked,
-    places: match.places,
+    revision: match.revision ?? 0,
     players: match.players.map((player) => {
       const mine = player.walletId === viewer;
       const show = Boolean(

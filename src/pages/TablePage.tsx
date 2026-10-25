@@ -1,4 +1,4 @@
-import { lazy, Suspense, type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Eye, EyeOff, MessageCircle } from "lucide-react";
 import { Link, useRoute } from "wouter";
 import PokerAppShell, { usePokerMotion } from "@/components/poker-app/PokerAppShell";
@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { useBlockCoach } from "@/components/coach/coachGate";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
 import { cardArt, cardName, deckArt, formatChips } from "@/lib/poker-design";
-import { subscribeChannel } from "@/lib/realtime";
+import { sendInbox, subscribeChannel } from "@/lib/realtime";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/table.css";
 import AnalysisPanel from "@/components/analysis/AnalysisPanel";
@@ -127,46 +127,74 @@ export default function TablePage() {
   const [draftMessage, setDraftMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const revision = useRef(0);
+
+  function remember(next: PublicMatch, hole?: PrivateView | null) {
+    if ((next.revision ?? 0) < revision.current) return;
+    revision.current = next.revision ?? revision.current;
+    setMatch(next);
+    if (hole) setYou(hole);
+  }
 
   useEffect(() => {
     if (!matchId || !address) return;
     let cancelled = false;
-
-    void api
-      .match(matchId, address)
-      .then((payload) => {
-        if (cancelled) return;
-        setMatch(payload.match);
-        setYou(payload.you);
-        setMessages(payload.chat);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
+    revision.current = 0;
 
     const applyState = (data: unknown) => {
       const payload = data as {
         match?: PublicMatch;
         you?: PrivateView;
         id?: string;
+        revision?: number;
       };
       if (payload.match) {
-        setMatch(payload.match);
-        if (payload.you) setYou(payload.you);
+        if (payload.match.id && payload.match.id !== matchId) return;
+        remember(payload.match, payload.you);
         return;
       }
-      if (payload.id) setMatch(payload as PublicMatch);
+      if (payload.id && payload.id !== matchId) return;
+      if (payload.id) remember(payload as PublicMatch);
     };
+
+    const pull = () => {
+      void api
+        .match(matchId, address)
+        .then((payload) => {
+          if (cancelled) return;
+          const first = revision.current === 0;
+          remember(payload.match, payload.you);
+          if (first) setError(null);
+          setMessages((current) => {
+            const seen = new Set(current.map((item) => `${item.at}:${item.text}`));
+            const extra = payload.chat.filter((item) => !seen.has(`${item.at}:${item.text}`));
+            return extra.length ? [...current, ...extra].slice(-40) : current;
+          });
+        })
+        .catch((err: Error) => {
+          if (!cancelled && revision.current === 0) setError(err.message);
+        });
+    };
+
+    pull();
 
     const stopTable = subscribeChannel(address, `table:${matchId}`, "state", applyState);
     const stopMatched = subscribeChannel(address, `table:${matchId}`, "matched", applyState);
     const stopWallet = subscribeChannel(address, `wallet:${address}`, "state", applyState);
     const stopChat = subscribeChannel(address, `table:${matchId}`, "chat", (data) => {
-      setMessages((current) => [...current, data as ChatMessage]);
+      const message = data as ChatMessage;
+      setMessages((current) => {
+        if (current.some((item) => item.at === message.at && item.text === message.text)) {
+          return current;
+        }
+        return [...current, message].slice(-40);
+      });
     });
+    const poll = window.setInterval(pull, 2000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
       stopTable();
       stopMatched();
       stopWallet();
@@ -220,9 +248,12 @@ export default function TablePage() {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.action(matchId, address, type, amount);
-      setMatch(result.match);
-      setYou(result.you);
+      try {
+        const result = await api.action(matchId, address, type, amount);
+        remember(result.match, result.you);
+      } catch {
+        await sendInbox(address, "action", { matchId, type, raiseTo: amount });
+      }
       setRaising(false);
     } catch (err) {
       setError((err as Error).message);
@@ -242,8 +273,12 @@ export default function TablePage() {
     if (!text || !address) return;
     setDraftMessage("");
     try {
-      const result = await api.chat(matchId, address, text);
-      setMessages(result.messages);
+      try {
+        const result = await api.chat(matchId, address, text);
+        setMessages(result.messages);
+      } catch {
+        await sendInbox(address, "chat", { matchId, text });
+      }
     } catch (err) {
       setError((err as Error).message);
     }

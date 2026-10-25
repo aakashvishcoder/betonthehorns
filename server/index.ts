@@ -8,16 +8,19 @@ import {
   setDisplayName,
   getLeaderboard,
   getProfile,
+  rebuildRatingsFromHistory,
   refundOpenEscrows,
   setShowcase,
 } from "./schema.js";
 import { buildBadges } from "./badges.js";
 import { rankFromElo, STARTING_ELO } from "./elo.js";
 import { tokenRequest } from "./ably.js";
+import { listenInbox } from "./bus.js";
 import {
   addChat,
   getChat,
-  getMatch,
+  getMatchView,
+  hydrateLiveMatches,
   joinQueue,
   leaveQueue,
   playAction,
@@ -40,6 +43,16 @@ import { MODES, type ActionType, type GameMode } from "./types.js";
 const port = Number(process.env.PORT || 4000);
 const origin = process.env.CLIENT_ORIGIN || "http://127.0.0.1:5176";
 
+function browserMayCall(requestOrigin: string | undefined) {
+  if (!requestOrigin || requestOrigin === origin) return true;
+  try {
+    const url = new URL(requestOrigin);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function isMode(value: unknown): value is GameMode {
   return typeof value === "string" && (MODES as readonly string[]).includes(value);
 }
@@ -55,15 +68,7 @@ const app = express();
 app.use(
   cors({
     origin(requestOrigin, callback) {
-      if (
-        !requestOrigin ||
-        requestOrigin === origin ||
-        /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(requestOrigin)
-      ) {
-        callback(null, true);
-        return;
-      }
-      callback(null, false);
+      callback(null, browserMayCall(requestOrigin));
     },
     credentials: true,
   }),
@@ -91,6 +96,7 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     service: "betonthehorns",
     elo: "settled-after-match",
+    matchmaking: "global-ably",
     db: dbReady,
   });
 });
@@ -267,12 +273,12 @@ app.post("/api/ably/token", async (req, res) => {
   }
 });
 
-app.get("/api/queue/:mode", (req, res) => {
+app.get("/api/queue/:mode", async (req, res) => {
   if (!isMode(req.params.mode)) {
     res.status(400).json({ error: "Unknown mode" });
     return;
   }
-  res.json(queueSnapshot(req.params.mode));
+  res.json(await queueSnapshot(req.params.mode));
 });
 
 app.post("/api/queue", async (req, res) => {
@@ -301,55 +307,31 @@ app.delete("/api/queue", async (req, res) => {
   }
 });
 
-// Practice vs AI (unranked): the AI personas fill the other seats.
-app.post("/api/practice", async (req, res) => {
-  try {
-    const walletId = requireWallet(req, res);
-    if (!walletId) return;
-    const { mode } = req.body as { mode?: string };
-    if (!isMode(mode)) {
-      res.status(400).json({ error: "mode required" });
-      return;
-    }
-    res.json(await startPractice(walletId, mode));
-  } catch (error) {
-    res.status((error as { status?: number }).status ?? 500).json({ error: (error as Error).message });
-  }
-});
-
-app.get("/api/match/active/:walletId", (req, res) => {
-  // Includes the player's hole cards, so only their own session may ask.
-  const walletId = requireWallet(req, res);
-  if (!walletId) return;
-  if (req.params.walletId !== walletId) {
-    res.status(403).json({ error: "That isn't your wallet." });
+app.get("/api/match/active/:walletId", async (req, res) => {
+  if (!isWalletId(req.params.walletId)) {
+    res.status(400).json({ error: "Invalid wallet" });
     return;
   }
-  const match = walletMatch(req.params.walletId);
-  if (!match) {
+  const match = await walletMatch(req.params.walletId);
+  if (!match || match.status !== "playing") {
     res.json({ match: null });
     return;
   }
   res.json({
     match: publicMatch(match, req.params.walletId),
     you: privateView(match, req.params.walletId),
-    chat: getChat(match.id),
+    chat: await getChat(match.id),
   });
 });
 
-app.get("/api/match/:id", (req, res) => {
-  const match = getMatch(req.params.id);
-  if (!match) {
+app.get("/api/match/:id", async (req, res) => {
+  const walletId = readWallet(req);
+  const view = await getMatchView(req.params.id, isWalletId(walletId) ? walletId : undefined);
+  if (!view) {
     res.status(404).json({ error: "Match not found" });
     return;
   }
-  // Hole cards only for the signed-in player; anyone else gets the public view.
-  const walletId = sessionWallet(req) ?? undefined;
-  res.json({
-    match: publicMatch(match, walletId),
-    you: walletId ? privateView(match, walletId) : null,
-    chat: getChat(match.id),
-  });
+  res.json(view);
 });
 
 app.post("/api/match/:id/action", async (req, res) => {
@@ -485,13 +467,18 @@ app.post("/api/analysis/:kind/:ref", async (req, res) => {
 
 async function start() {
   await migrate();
+  await hydrateLiveMatches();
   await refundOpenEscrows();
   if (dbReady) await migrateAnalysis().catch((error) => console.warn("[db] analysis", (error as Error).message));
   if (dbReady) await migratePuzzles().catch((error) => console.warn("[db] puzzles", (error as Error).message));
   // Build today's puzzles up front (and again after midnight) so no visitor waits for them.
   setTimeout(() => dailyPuzzles(today()), 0);
   setInterval(() => dailyPuzzles(today()), 10 * 60_000).unref();
-  app.listen(port, () => {
+  await rebuildRatingsFromHistory();
+  await listenInbox().catch((error) => {
+    console.warn("[ably] inbox", (error as Error).message);
+  });
+  app.listen(port, "0.0.0.0", () => {
     console.log(`betonthehorns api on :${port}`);
   });
 }

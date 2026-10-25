@@ -74,12 +74,8 @@ export type MatchState = {
   /** Private until the match finishes, then published so the shuffle can be checked. */
   seed: string;
   rngCounter: number;
-  /** Ranked matches settle Elo; practice (vs AI) matches don't. */
-  ranked: boolean;
-  /** Finishing place per wallet (1 = winner), filled in as players bust. */
-  places: Record<string, number>;
-  /** Stacks at the start of the current hand, to order same-hand busts. */
-  handStartStacks: Record<string, number>;
+  /** Bumped on every broadcast so a late device can ignore an older snapshot. */
+  revision: number;
 };
 
 export type ActionType = "fold" | "check" | "call" | "raise";

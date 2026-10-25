@@ -47,7 +47,7 @@ export default function PlayPage() {
           title="Pick a ranked mode."
           description="Each format keeps its own ELO. The table locks what each rating can lose. Beating a higher rating is worth more."
         />
-        {live && (
+        {live && live.status === "playing" && (
           <Panel className="queue-panel">
             <div className="queue-status">
               <Pill tone="maroon">AT THE TABLE</Pill>
