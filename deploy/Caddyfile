@@ -1,0 +1,6 @@
+# Caddy gets a free HTTPS certificate and forwards to the app (wallets need HTTPS).
+# Replace the domain, point its DNS A record at the VM's IP, then: sudo systemctl reload caddy
+play.example.com {
+	encode gzip
+	reverse_proxy localhost:4000
+}
