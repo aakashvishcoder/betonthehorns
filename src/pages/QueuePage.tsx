@@ -6,7 +6,6 @@ import { PageHeading, Panel, Pill } from "@/components/poker-app/PokerUI";
 import { api, type QueueSnapshot } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
-import { demoPlayerFromAddress } from "@/lib/poker-design";
 import { subscribeChannel } from "@/lib/realtime";
 import "@/styles/play.css";
 
@@ -16,7 +15,8 @@ export default function QueuePage() {
   const { address } = useAuth();
   const modeId = params?.mode && isGameModeId(params.mode) ? params.mode : null;
   const mode = modeId ? getGameMode(modeId) : null;
-  const player = demoPlayerFromAddress(address ?? "demo");
+  const [elo, setElo] = useState(1200);
+  const [rank, setRank] = useState("Bronze");
   const [seconds, setSeconds] = useState(0);
   const [queue, setQueue] = useState<QueueSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +36,16 @@ export default function QueuePage() {
       matchedRef.current = true;
       navigate(`/table/${matchId}`);
     };
+
+    void api
+      .profile(address)
+      .then((record) => {
+        const stats = record.modes.find((item) => item.mode === modeId);
+        if (!stats) return;
+        setElo(stats.elo);
+        setRank(stats.rank);
+      })
+      .catch(() => undefined);
 
     void api
       .joinQueue(address, modeId)
@@ -76,7 +86,6 @@ export default function QueuePage() {
     return null;
   }
 
-  const stats = player.modes[modeId];
   const waiting = queue?.count ?? 1;
 
   return (
@@ -85,7 +94,7 @@ export default function QueuePage() {
         <PageHeading
           eyebrow={`${mode.label.toUpperCase()} · LIVE QUEUE`}
           title={`Line up for ${mode.label}.`}
-          description={`${mode.seats} seats. ${mode.escrow} ELO from this mode will be escrowed on Solana later. Matchmaking is live now.`}
+          description={`${mode.seats} seats. This mode’s ELO locks when the table opens. The swing depends on the ratings at the table.`}
           action={
             <Link href="/play" className="club-button club-button--secondary">
               Back to dashboard
@@ -106,15 +115,15 @@ export default function QueuePage() {
           <dl className="mode-stats">
             <div>
               <dt>Your ELO</dt>
-              <dd>{stats.elo}</dd>
+              <dd>{elo}</dd>
             </div>
             <div>
               <dt>Rank dNFT</dt>
-              <dd>{stats.rank}</dd>
+              <dd>{rank}</dd>
             </div>
             <div>
               <dt>Escrow</dt>
-              <dd>{mode.escrow}</dd>
+              <dd>At risk</dd>
             </div>
           </dl>
           <div className="queue-actions">

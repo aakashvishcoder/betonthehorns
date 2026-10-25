@@ -1,77 +1,73 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ArrowUpRight, Trophy } from "lucide-react";
 import { Link, Redirect, useRoute } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
 import {
   Avatar,
-  DeckCard,
+  CopyHash,
+  explorerTx,
+  SolanaMark,
   PageHeading,
   Panel,
   Pill,
+  RankMedal,
   StatTile,
 } from "@/components/poker-app/PokerUI";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { api } from "@/lib/api";
+import { api, type ProfileBadge, type PublicProfile } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { gameModes, type GameModeId } from "@/lib/game-modes";
-import {
-  demoPlayerFromAddress,
-  playerMilestones,
-  sampleGames,
-  type SampleGame,
-} from "@/lib/poker-design";
+import { gameModes } from "@/lib/game-modes";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/profile.css";
+
+const STARTING_ELO = 1200;
+
+function lockedProgress(badge: ProfileBadge, profile: PublicProfile) {
+  const goal = Number(badge.key.split(":")[1]);
+  if (badge.kind === "hands" && Number.isFinite(goal)) {
+    return `${profile.hands.toLocaleString()} / ${goal.toLocaleString()} hands`;
+  }
+  if (badge.kind === "wins" && Number.isFinite(goal)) {
+    return `${profile.wins.toLocaleString()} / ${goal.toLocaleString()} wins`;
+  }
+  const mode = gameModes.find((item) => item.id === badge.mode)?.label ?? "this mode";
+  return `Finish one ${mode} match to mint this rank.`;
+}
 
 export default function ProfilePage() {
   const [, params] = useRoute<{ address: string }>("/profile/:address");
   const { isAuthenticated, address: myAddress } = useAuth();
-  const [selectedGame, setSelectedGame] = useState<SampleGame | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
-  const lookedUp = params?.address ?? myAddress ?? "demo";
-  const player = demoPlayerFromAddress(lookedUp);
-  const shownName = displayName || player.name;
+  const [shown, setShown] = useState<string[]>([]);
+  const [savingBadges, setSavingBadges] = useState(false);
+  const [showLocked, setShowLocked] = useState(false);
+  const lookedUp = params?.address ?? "";
+  const mine = Boolean(myAddress && myAddress === lookedUp);
+  const shownName = profile?.displayName || (lookedUp ? shortAddress(lookedUp) : "Wallet");
 
   useEffect(() => {
-    if (!lookedUp || lookedUp === "demo") return;
+    if (!lookedUp) return;
     let cancelled = false;
+    setProfile(null);
+    setError(null);
     void api
-      .wallet(lookedUp)
+      .profile(lookedUp)
       .then((record) => {
         if (cancelled) return;
-        setDisplayName(record.displayName);
+        setProfile(record);
         setDraftName(record.displayName ?? "");
+        setShown(record.badges.filter((badge) => badge.shown).map((badge) => badge.key));
       })
-      .catch(() => undefined);
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
     return () => {
       cancelled = true;
     };
   }, [lookedUp]);
-  const mine = myAddress === player.address;
-  const milestones = useMemo(() => playerMilestones(player), [player]);
-  const totals = useMemo(() => {
-    return gameModes.reduce(
-      (sum, mode) => {
-        const stats = player.modes[mode.id];
-        return {
-          games: sum.games + stats.games,
-          wins: sum.wins + stats.wins,
-          handsWon: sum.handsWon + stats.handsWon,
-          handsFolded: sum.handsFolded + stats.handsFolded,
-        };
-      },
-      { games: 0, wins: 0, handsWon: 0, handsFolded: 0 },
-    );
-  }, [player]);
 
   async function saveName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -80,13 +76,31 @@ export default function ProfilePage() {
     setNameError(null);
     try {
       const saved = await api.setDisplayName(myAddress, draftName);
-      setDisplayName(saved.displayName);
+      setProfile((current) =>
+        current ? { ...current, displayName: saved.displayName } : current,
+      );
       setDraftName(saved.displayName ?? "");
       window.dispatchEvent(new CustomEvent("horns-name", { detail: saved.displayName }));
-    } catch (error) {
-      setNameError((error as Error).message);
+    } catch (err) {
+      setNameError((err as Error).message);
     } finally {
       setSavingName(false);
+    }
+  }
+
+  async function saveBadges(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!myAddress) return;
+    setSavingBadges(true);
+    setError(null);
+    try {
+      const saved = await api.setShowcase(myAddress, shown);
+      setProfile(saved);
+      setShown(saved.badges.filter((badge) => badge.shown).map((badge) => badge.key));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingBadges(false);
     }
   }
 
@@ -97,13 +111,25 @@ export default function ProfilePage() {
     return <Redirect to="/leaderboard" />;
   }
 
+  const modes = profile?.modes ?? gameModes.map((mode) => ({
+    mode: mode.id,
+    elo: STARTING_ELO,
+    rank: "Bronze",
+    games: 0,
+    wins: 0,
+    hands: 0,
+  }));
+  const earnedBadges = (profile?.badges ?? []).filter((badge) => badge.earned);
+  const visibleBadges = earnedBadges.filter((badge) => (mine ? true : badge.shown));
+  const latest = profile?.recent[0];
+
   return (
     <PokerAppShell section="profile">
       <div className="profile-page">
         <PageHeading
-          eyebrow={mine ? "YOUR WALLET · DEMO" : "PUBLIC PROFILE · DEMO"}
+          eyebrow={mine ? "YOUR WALLET" : "PUBLIC PROFILE"}
           title={shownName}
-          description={`${shortAddress(player.address)} · Separate ELO, rank dNFTs, and milestones for Hands Up, SNG 4, and SNG 6.`}
+          description={`${shortAddress(lookedUp)} · Separate ELO and rank dNFTs for Hands Up, SNG 4, and SNG 6.`}
           action={
             <Link href="/play" className="club-button">
               Queue a mode <ArrowUpRight size={15} />
@@ -124,12 +150,10 @@ export default function ProfilePage() {
               <div>
                 <div className="profile-name-line">
                   <h2>{shownName}</h2>
-                  <Pill tone="maroon">@{player.handle}</Pill>
                 </div>
-                <p className="profile-handle">{player.address}</p>
+                <p className="profile-handle">{lookedUp}</p>
                 <p className="profile-bio">
-                  Ranked Hold’em on Solana. ELO is escrowed per game. Rank
-                  dNFTs mint when this wallet crosses a new tier.
+                  Ranked Hold’em on Solana. Each mode has its own ELO, starting at 1,200. A win against a higher rating moves it further.
                 </p>
                 {mine && (
                   <form className="profile-name-form" onSubmit={(event) => void saveName(event)}>
@@ -156,52 +180,67 @@ export default function ProfilePage() {
 
           <Panel className="profile-featured-panel">
             <div className="profile-panel-kicker">
-              <Trophy size={14} /> FEATURED HAND
+              <Trophy size={14} /> LATEST RATING
             </div>
             <div className="profile-featured-content">
               <div>
-                <h2>Straight on the river.</h2>
-                <p>Demo highlight from a Hands Up match.</p>
-                <Pill tone="maroon">DEMO</Pill>
-              </div>
-              <div className="profile-featured-cards">
-                <DeckCard card="AS" width={110} foil label="Ace of spades" />
-                <DeckCard card="KH" width={110} foil label="King of hearts" />
+                {latest ? (
+                  <>
+                    <h2>
+                      {latest.delta > 0 ? "+" : ""}
+                      {latest.delta} ELO
+                    </h2>
+                    <p>
+                      {gameModes.find((mode) => mode.id === latest.mode)?.label} · now {latest.elo}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2>No settled matches yet.</h2>
+                    <p>Ratings appear here after a table finishes.</p>
+                  </>
+                )}
               </div>
             </div>
           </Panel>
         </section>
 
+        {error && <p className="profile-name-error">{error}</p>}
+
         <section className="profile-stats" aria-label="Career totals">
-          <StatTile label="Games" value={totals.games} note="All modes" />
+          <StatTile label="Games" value={profile?.games ?? 0} note="All modes" />
           <StatTile
             label="Wins"
-            value={totals.wins}
-            note="Across ranked tables"
+            value={profile?.wins ?? 0}
+            note="Tables won"
             tone="violet"
           />
           <StatTile
-            label="Hands won"
-            value={totals.handsWon}
-            note="Milestone track"
+            label="Hands"
+            value={profile?.hands ?? 0}
+            note="Hands played"
           />
           <StatTile
-            label="Hands folded"
-            value={totals.handsFolded}
-            note="Milestone track"
+            label="Shown dNFTs"
+            value={visibleBadges.filter((badge) => badge.shown).length}
+            note={mine ? "Chosen for the public profile" : "Public showcase"}
             tone="maroon"
           />
         </section>
 
         <section className="profile-modes" aria-label="ELO by mode">
           {gameModes.map((mode) => {
-            const stats = player.modes[mode.id as GameModeId];
+            const stats = modes.find((item) => item.mode === mode.id);
             return (
               <Panel key={mode.id} className="profile-mode-card">
-                <span>{mode.label}</span>
-                <strong>{stats.elo}</strong>
+                <div className="profile-mode-head">
+                  <span>{mode.label}</span>
+                  <RankMedal rank={stats?.rank ?? "Bronze"} size={26} />
+                </div>
+                <strong>{stats?.elo ?? STARTING_ELO}</strong>
                 <small>
-                  {stats.rank} dNFT · {stats.games} games
+                  {stats?.rank ?? "Bronze"}
+                  {stats && stats.games > 0 ? " dNFT" : ""} · {stats?.games ?? 0} games
                 </small>
               </Panel>
             );
@@ -209,11 +248,29 @@ export default function ProfilePage() {
         </section>
 
         <section className="profile-highlights" aria-label="dNFT milestones">
-          {milestones.map((item) => (
-            <Panel key={item.id} className="profile-highlight">
+          {visibleBadges.length === 0 && (
+            <Panel className="profile-highlight">
               <Trophy size={17} />
               <div>
-                <span>{item.earned ? "MINTED" : "LOCKED"}</span>
+                <span>{mine ? "NONE YET" : "PRIVATE"}</span>
+                <strong>{mine ? "No dNFTs yet" : "No public dNFTs"}</strong>
+                <small>
+                  {mine
+                    ? "Finish a match to earn one. Only badges you have can be shown."
+                    : "This wallet has not chosen any earned badges to show."}
+                </small>
+              </div>
+            </Panel>
+          )}
+          {visibleBadges.map((item) => (
+            <Panel key={item.key} className="profile-highlight">
+              {item.kind === "rank" ? (
+                <RankMedal rank={item.tier ?? "Bronze"} size={28} />
+              ) : (
+                <Trophy size={17} />
+              )}
+              <div>
+                <span>{item.shown ? "SHOWN" : "HIDDEN"}</span>
                 <strong>{item.label}</strong>
                 <small>{item.detail}</small>
               </div>
@@ -221,102 +278,154 @@ export default function ProfilePage() {
           ))}
         </section>
 
+        {mine && profile && (
+          <section className="profile-history" aria-label="Profile settings">
+            <div className="profile-history-heading">
+              <div>
+                <span className="club-section-heading">PROFILE SETTINGS</span>
+                <h2>Choose the dNFTs on your public profile.</h2>
+              </div>
+            </div>
+            <Panel className="profile-history-panel">
+              <form className="profile-showcase-form" onSubmit={(event) => void saveBadges(event)}>
+                {earnedBadges.length === 0 ? (
+                  <p className="profile-showcase-empty">
+                    Finish a match to earn a dNFT. Only badges you already have can be shown on your public profile.
+                  </p>
+                ) : (
+                  <ul className="profile-showcase">
+                    {earnedBadges.map((badge) => (
+                      <li key={badge.key}>
+                        <label className="profile-showcase-item">
+                          <input
+                            type="checkbox"
+                            checked={shown.includes(badge.key)}
+                            onChange={(event) => {
+                              setShown((current) =>
+                                event.target.checked
+                                  ? [...current, badge.key]
+                                  : current.filter((key) => key !== badge.key),
+                              );
+                            }}
+                          />
+                          {badge.kind === "rank" ? (
+                            <RankMedal rank={badge.tier ?? "Bronze"} size={28} />
+                          ) : (
+                            <Trophy size={16} />
+                          )}
+                          <span>
+                            <strong>{badge.label}</strong>
+                            <small>{badge.detail}</small>
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {showLocked && (
+                  <ul className="profile-showcase profile-showcase--locked">
+                    {profile.badges
+                      .filter((badge) => !badge.earned)
+                      .map((badge) => (
+                        <li key={badge.key}>
+                          <div className="profile-showcase-item">
+                            {badge.kind === "rank" ? (
+                              <RankMedal rank={badge.tier ?? "Bronze"} size={28} />
+                            ) : (
+                              <Trophy size={16} />
+                            )}
+                            <span>
+                              <strong>{badge.label}</strong>
+                              <small>{lockedProgress(badge, profile)}</small>
+                            </span>
+                            <em>Locked</em>
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+                <div className="profile-showcase-footer">
+                  <button
+                    className="club-button club-button--secondary"
+                    type="button"
+                    onClick={() => setShowLocked((open) => !open)}
+                  >
+                    {showLocked ? "Hide locked dNFTs" : "View locked dNFTs"}
+                  </button>
+                  {earnedBadges.length > 0 && (
+                    <button className="club-button" type="submit" disabled={savingBadges}>
+                      {savingBadges ? "Saving…" : "Save showcase"}
+                    </button>
+                  )}
+                </div>
+              </form>
+            </Panel>
+          </section>
+        )}
+
         <section className="profile-history" aria-labelledby="past-games-heading">
           <div className="profile-history-heading">
             <div>
               <span className="club-section-heading">RECENT MATCHES</span>
-              <h2 id="past-games-heading">Demo results.</h2>
+              <h2 id="past-games-heading">Rating history.</h2>
             </div>
           </div>
-          <Panel className="profile-history-panel">
-            <div className="club-table-scroll">
-              <table className="club-table club-table--stack profile-history-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Mode</th>
-                    <th>Result</th>
-                    <th>ELO</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sampleGames.map((game) => (
-                    <tr key={game.id}>
-                      <td>
-                        <time>{game.date}</time>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="profile-game-link"
-                          onClick={() => setSelectedGame(game)}
-                        >
-                          {gameModes.find((mode) => mode.id === game.mode)?.label}
-                        </button>
-                      </td>
-                      <td>
-                        <Pill tone={game.result === "Win" ? "violet" : "muted"}>
-                          {game.result}
-                        </Pill>
-                      </td>
-                      <td
-                        className={
-                          game.eloChange > 0
-                            ? "profile-net profile-net--positive"
-                            : "profile-net profile-net--negative"
-                        }
-                      >
-                        {game.eloChange > 0 ? "+" : ""}
-                        {game.eloChange}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
+          <div className="profile-games">
+            {(profile?.recent ?? []).map((game) => (
+              <Panel key={`${game.time}-${game.mode}-${game.matchId ?? ""}`} className="profile-game">
+                <div className="profile-game-meta">
+                  <time>{new Date(game.time).toLocaleString()}</time>
+                  <span>{gameModes.find((mode) => mode.id === game.mode)?.label}</span>
+                  <strong>{game.elo} ELO</strong>
+                  <b
+                    className={
+                      game.delta > 0
+                        ? "profile-net profile-net--positive"
+                        : game.delta < 0
+                          ? "profile-net profile-net--negative"
+                          : "profile-net"
+                    }
+                  >
+                    {game.delta > 0 ? "+" : ""}
+                    {game.delta}
+                  </b>
+                </div>
+                <CopyHash label="Commit" value={game.commitHash} hidden="No commit stored" />
+                <CopyHash
+                  label="Seed"
+                  value={game.revealSeed}
+                  hidden="Revealed when the match finished"
+                />
+                <div className="profile-game-chain">
+                  <span className="solana-kicker">
+                    <SolanaMark />
+                    On Solana
+                  </span>
+                  {(game.chain ?? []).length === 0 ? (
+                    <p>No transaction was recorded for this match.</p>
+                  ) : (
+                    <ul>
+                      {(game.chain ?? []).map((tx) => (
+                        <li key={tx.signature}>
+                          <a href={explorerTx(tx.signature)} target="_blank" rel="noreferrer">
+                            {tx.label}
+                          </a>
+                          <code>{tx.signature.slice(0, 8)}…{tx.signature.slice(-6)}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </Panel>
+            ))}
+            {(profile?.recent.length ?? 0) === 0 && (
+              <Panel className="profile-history-panel">
+                <div className="club-empty">No rating changes yet.</div>
+              </Panel>
+            )}
+          </div>
         </section>
       </div>
-
-      <Dialog
-        open={Boolean(selectedGame)}
-        onOpenChange={(open) => !open && setSelectedGame(null)}
-      >
-        {selectedGame && (
-          <DialogContent className="profile-game-dialog">
-            <DialogHeader>
-              <DialogTitle>
-                {gameModes.find((mode) => mode.id === selectedGame.mode)?.label}
-              </DialogTitle>
-              <DialogDescription>
-                Demo match on {selectedGame.date}. ELO escrow is not live.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="profile-dialog-detail">
-              <div>
-                <span>Best hand</span>
-                <strong>{selectedGame.bestHand}</strong>
-              </div>
-              <div>
-                <span>Seats</span>
-                <strong>{selectedGame.players}</strong>
-              </div>
-              <div>
-                <span>ELO</span>
-                <strong>
-                  {selectedGame.eloChange > 0 ? "+" : ""}
-                  {selectedGame.eloChange}
-                </strong>
-              </div>
-            </div>
-            <div className="profile-dialog-cards">
-              {selectedGame.cards.map((card) => (
-                <DeckCard key={card} card={card} width={58} foil={false} />
-              ))}
-            </div>
-          </DialogContent>
-        )}
-      </Dialog>
     </PokerAppShell>
   );
 }

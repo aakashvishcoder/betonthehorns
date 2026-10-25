@@ -33,6 +33,13 @@ export type Player = {
   bot: boolean;
   lastAction: string | null;
   actedThisStreet: boolean;
+  /** Rank tier for this match's mode, from the rating they sat down with. */
+  rank: string;
+};
+
+export type ChainTx = {
+  label: string;
+  signature: string;
 };
 
 export type MatchState = {
@@ -60,20 +67,13 @@ export type MatchState = {
   /** Hole cards are face up while the board runs out. */
   exposed: boolean;
   log: string[];
-  /** Ranked matches settle Elo on Solana; practice (vs AI) matches don't. */
-  ranked: boolean;
-  /** Secret shuffle seed (hex). Its sha256 is committed on-chain; revealed when the match ends. */
+  /** Confirmed Solana transactions for this match, in the order they landed. */
+  chain: ChainTx[];
+  /** sha256 of the match seed. Public for the whole game. */
+  commitHash: string;
+  /** Private until the match finishes, then published so the shuffle can be checked. */
   seed: string;
-  /** This hand's remaining deck, dealt from the end. Never sent to clients. */
-  deck: Card[];
-  /** Finishing place per wallet (1 = winner), filled in as players bust. */
-  places: Record<string, number>;
-  /** Stacks at the start of the current hand, to order same-hand busts. */
-  handStartStacks: Record<string, number>;
-  /** On-chain match id (u64 as string) once committed, or null if Solana was unavailable. */
-  chainMatchId: string | null;
-  /** Elo before/after per player once the ranked result is settled on-chain. */
-  elo: { walletId: string; before: number; after: number }[] | null;
+  rngCounter: number;
 };
 
 export type ActionType = "fold" | "check" | "call" | "raise";
