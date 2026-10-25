@@ -37,18 +37,26 @@
 }
 .world-light-ribbon {
   position: absolute;
-  top: 50px;
-  left: -10%;
-  width: 120%;
-  height: 1450px;
-  opacity: 0.46;
+  inset: 0 -8% 0;
+  display: flex;
+  flex-direction: column;
+  opacity: 0.52;
   mask-image: linear-gradient(
     to bottom,
     transparent,
-    #000 15%,
-    #000 62%,
+    #000 64px,
+    #000 calc(100% - 80px),
     transparent
   );
+}
+.world-light-band {
+  position: relative;
+  flex: 1 0 70vh;
+  min-height: 70vh;
+  margin-bottom: -16vh;
+}
+.world-light-band:last-child {
+  margin-bottom: 0;
 }
 .world-card-shards {
   position: absolute;
@@ -72,9 +80,7 @@
     radial-gradient(ellipse at 80% 28%, #8625a629, transparent 48%),
     radial-gradient(ellipse at 21% 65%, #b92d5017, transparent 45%);
 }
-.poker-night-world > .hero,
-.poker-night-world > .experience-section,
-.poker-night-world > .night-planning-section {
+.poker-night-world > :not(.poker-world-atmosphere) {
   position: relative;
   z-index: 1;
 }
@@ -311,13 +317,34 @@
 .cohesive-site .suit-marquee {
   position: relative;
   z-index: 1;
+  display: block;
   border: 0;
   background: transparent;
-  opacity: 0.62;
-  height: 72px;
+  opacity: 0.82;
+  height: auto;
+  padding-block: 4px 8px;
 }
-.cohesive-site .suit-marquee .marquee-track {
-  animation-duration: 55s;
+.cohesive-site .suit-marquee b {
+  color: #d081f1;
+  font-size: 1.35em;
+  font-weight: 400;
+}
+.cohesive-site .manifesto-reveal {
+  margin: 25px 0 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(42px, 5.7vw, 74px);
+  line-height: 1.11;
+  letter-spacing: -3px;
+  font-weight: 500;
+}
+.cohesive-site .manifesto-reveal .scroll-reveal-text {
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  font-weight: inherit;
+}
+.cohesive-site .manifesto-reveal span {
+  color: #d081f1;
 }
 .cohesive-site .experience-section {
   padding-top: 76px;
@@ -574,11 +601,15 @@
     right: 6%;
   }
   .world-light-ribbon {
-    top: 310px;
-    left: -35%;
-    width: 170%;
-    height: 1600px;
+    inset-inline: -18%;
     opacity: 0.36;
+  }
+  .world-light-band {
+    min-height: 62vh;
+  }
+  .cohesive-site .manifesto-reveal {
+    font-size: 44px;
+    letter-spacing: -2px;
   }
   .world-card-shards {
     top: 310px;

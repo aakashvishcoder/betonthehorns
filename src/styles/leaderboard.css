@@ -471,4 +471,13 @@
   .leaderboard-table {
     min-width: 0;
   }
+  .leaderboard-wheel {
+    height: 180px;
+  }
+}
+
+.leaderboard-wheel {
+  height: 210px;
+  margin: -8px 0 4px;
+  font-family: "Space Grotesk", sans-serif;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
+import LatticeLoader from "@/components/react-bits/LatticeLoader";
 import { api, type Analysis, type AnalysisKind } from "@/lib/api";
 import "@/styles/analysis.css";
 
@@ -48,16 +49,40 @@ export default function AnalysisPanel({
     }
   }
 
-  if (status === "checking") return null;
+  if (status === "checking" || status === "running") {
+    return (
+      <div className="analysis-start">
+        <LatticeLoader
+          label={status === "checking" ? "Checking" : "Reviewing the hand"}
+          color="#e1b0f7"
+          glow
+          glowColor="#932db9"
+          pattern="spiral"
+          showTimer={status === "running"}
+        />
+      </div>
+    );
+  }
 
   if (!analysis) {
     return (
       <div className="analysis-start">
-        <button type="button" className="club-button" onClick={() => void run()} disabled={status === "running"}>
+        <button type="button" className="club-button" onClick={() => void run()}>
           <Sparkles size={14} />
-          {status === "running" ? "Reviewing your decisions… (up to a minute)" : label}
+          {label}
         </button>
-        {status === "error" && <p className="analysis-error">{error}</p>}
+        {status === "error" && (
+          <>
+            <LatticeLoader
+              status="error"
+              label="Reviewing the hand"
+              errorLabel="Couldn't review"
+              color="#e1b0f7"
+              showTimer={false}
+            />
+            <p className="analysis-error">{error}</p>
+          </>
+        )}
       </div>
     );
   }

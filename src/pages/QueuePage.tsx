@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { UsersRound } from "lucide-react";
+import LatticeLoader from "@/components/react-bits/LatticeLoader";
 import { Link, useLocation, useRoute } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
-import { PageHeading, Panel, Pill } from "@/components/poker-app/PokerUI";
+import { PageHeading, Panel } from "@/components/poker-app/PokerUI";
 import { api, type QueueSnapshot } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
@@ -17,18 +18,12 @@ export default function QueuePage() {
   const mode = modeId ? getGameMode(modeId) : null;
   const [elo, setElo] = useState(1200);
   const [rank, setRank] = useState("Bronze");
-  const [seconds, setSeconds] = useState(0);
   const [queue, setQueue] = useState<QueueSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const matchedRef = useRef(false);
   const seatRef = useRef(0);
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (!modeId || !address) return;
@@ -119,10 +114,21 @@ export default function QueuePage() {
 
         <Panel className="queue-panel">
           <div className="queue-status">
-            <Pill tone="maroon">SEARCHING</Pill>
+            <LatticeLoader
+              status={error ? "error" : "working"}
+              label="Finding a table"
+              errorLabel="Queue failed"
+              color="#e1b0f7"
+              glow
+              glowColor="#932db9"
+              pattern="orbit"
+              cellSize={8}
+              gap={3}
+              fontSize={16}
+            />
             <h2>Waiting for {mode.seats} wallets worldwide.</h2>
             <p>
-              {waiting} / {mode.seats} in the global {mode.label} queue · {seconds}s
+              {waiting} / {mode.seats} in the global {mode.label} queue
             </p>
             <p>This mode has one queue on Ably. The table starts when {mode.seats} wallets are in it.</p>
             {error && <p>{error}</p>}

@@ -14,6 +14,7 @@ import { shortAddress } from "@/lib/utils";
 import { walletToast } from "@/lib/wallet-toast";
 import "@/styles/puzzles.css";
 import AnalysisPanel from "@/components/analysis/AnalysisPanel";
+import LatticeLoader from "@/components/react-bits/LatticeLoader";
 
 type Results = Record<number, PuzzleResult>;
 type Board = Awaited<ReturnType<typeof api.puzzleLeaderboard>>["rows"];
@@ -138,6 +139,19 @@ export default function PuzzlesPage() {
         />
 
         {error && <Panel className="puzzles-panel">{error}</Panel>}
+
+        {!day && !error && (
+          <LatticeLoader
+            label="Dealing the spots"
+            color="#e1b0f7"
+            glow
+            glowColor="#932db9"
+            pattern="ripple"
+            showTimer={false}
+            cellSize={8}
+            gap={3}
+          />
+        )}
 
         {puzzles.length > 0 && (
           <nav className="puzzles-dots" aria-label="Puzzles">

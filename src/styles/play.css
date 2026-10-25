@@ -580,3 +580,49 @@
 .mode-card-actions .club-button {
   width: 100%;
 }
+
+.play-ask {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+}
+.play-ask h2 {
+  font-size: 28px;
+  letter-spacing: -0.04em;
+}
+.play-ask > p,
+.play-ask-reply {
+  color: #b9aebe;
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 68ch;
+}
+.play-ask-reply {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #141016cc;
+  color: #fbf5fe;
+  white-space: pre-wrap;
+}
+.play-ask-error {
+  color: #e98392;
+  font-size: 13px;
+}
+.play-how {
+  max-width: 760px;
+}
+.play-how .stepper__step h3 {
+  font-size: 28px;
+  letter-spacing: -0.04em;
+}
+.play-how .stepper__step p {
+  margin-top: 10px;
+  color: rgba(244, 244, 245, 0.7);
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 62ch;
+}
+.queue-status .lattice-loader {
+  margin-bottom: 4px;
+}

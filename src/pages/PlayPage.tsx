@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { ArrowUpRight, Bot, ShieldCheck, Trophy } from "lucide-react";
+import { ArrowUpRight, Bot } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import TableQuestion from "@/components/coach/TableQuestion";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
 import { PageHeading, Panel, Pill } from "@/components/poker-app/PokerUI";
+import Stepper, { Step } from "@/components/react-bits/Stepper";
 import { api, type ProfileMode, type PublicMatch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { gameModes } from "@/lib/game-modes";
+import { walletToast } from "@/lib/wallet-toast";
 import "@/styles/play.css";
 
 export default function PlayPage() {
@@ -105,29 +108,48 @@ export default function PlayPage() {
           })}
         </section>
 
-        <section className="play-notes" aria-label="How ranked play works">
-          <Panel className="play-note">
-            <ShieldCheck size={18} />
-            <div>
-              <strong>ELO escrow</strong>
+        <TableQuestion />
+
+        <section className="play-how" aria-label="How a ranked match works">
+          <Stepper
+            accentColor="#d081f1"
+            theme="dark"
+            width="100%"
+            nextButtonText="Next"
+            completeButtonText="Got it"
+            backButtonText="Back"
+            completedContent={
+              <p>Queue a mode above. The escrow locks when the table opens.</p>
+            }
+          >
+            <Step title="Mode">
+              <h3>Pick a ranked mode.</h3>
+              <p>Hands Up, SNG 4, or SNG 6. Each format keeps its own ELO.</p>
+            </Step>
+            <Step title="Queue">
+              <h3>Wait for the seats.</h3>
+              <p>
+                The table opens when the queue fills. Practice versus AI if you
+                want a table right now.
+              </p>
+            </Step>
+            <Step title="Escrow">
+              <h3>ELO escrow.</h3>
               <p>
                 Ratings start at 1,200, and any rating can queue. When the table
                 opens, each player locks the ELO the formula says they could lose
                 to that field. Beating a higher rating is worth more than beating
                 a lower one. You never lose more than you locked.
               </p>
-            </div>
-          </Panel>
-          <Panel className="play-note">
-            <Trophy size={18} />
-            <div>
-              <strong>Rank dNFTs</strong>
+            </Step>
+            <Step title="Rank">
+              <h3>Rank dNFTs.</h3>
               <p>
                 Bronze through Platinum follow each mode’s ELO. Hands played and
                 games won unlock the milestone dNFTs.
               </p>
-            </div>
-          </Panel>
+            </Step>
+          </Stepper>
         </section>
       </div>
     </PokerAppShell>

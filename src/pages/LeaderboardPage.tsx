@@ -16,10 +16,13 @@ import {
 } from "@/components/poker-app/PokerUI";
 import { api, type LeaderboardRow } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import OptionWheel from "@/components/react-bits/OptionWheel";
 import { gameModes, type GameModeId } from "@/lib/game-modes";
 import { rankFromElo } from "@/lib/poker-design";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/leaderboard.css";
+
+const ladderLabels = gameModes.map((item) => item.label);
 
 function Movement({ value }: { value: number }) {
   if (value > 0)
@@ -83,19 +86,25 @@ export default function LeaderboardPage() {
           }
         />
 
-        <section className="leaderboard-controls" aria-label="Mode filter">
-          <div className="club-segmented" role="group" aria-label="Game mode">
-            {gameModes.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={mode === item.id}
-                onClick={() => setMode(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+        <section className="leaderboard-wheel" aria-label="Game mode">
+          <OptionWheel
+            items={ladderLabels}
+            defaultSelected={0}
+            textColor="#8d7b96"
+            activeColor="#fbf5fe"
+            fontSize={1.85}
+            spacing={1.25}
+            curve={0.8}
+            tilt={7}
+            blur={1.2}
+            fade={0.28}
+            inset={36}
+            side="left"
+            onChange={(index) => {
+              const next = gameModes[index];
+              if (next) setMode(next.id);
+            }}
+          />
         </section>
 
         <section className="leaderboard-overview" aria-label="Top rated wallets">
