@@ -2,7 +2,15 @@ import "dotenv/config";
 import Ably from "ably";
 import type { GameMode } from "./types.js";
 
-export const INBOX_CHANNEL = "inbox";
+/**
+ * Every Ably channel name carries this version prefix. Older deployments that still share the
+ * database and Ably app use the bare names, so they can't hear our queue/inbox events or push
+ * their own games onto our players (which created duplicate games without history or Elo).
+ * Bump it if a future change must not interoperate with running older code.
+ */
+export const CHANNEL_VERSION = "v2:";
+export const ch = (name: string) => `${CHANNEL_VERSION}${name}`;
+export const INBOX_CHANNEL = ch("inbox");
 
 let rest: Ably.Rest | null = null;
 let realtime: Ably.Realtime | null = null;
@@ -29,7 +37,7 @@ export function getRealtime() {
 
 export async function publish(channel: string, name: string, data: unknown) {
   try {
-    await getRest().channels.get(channel).publish(name, data);
+    await getRest().channels.get(ch(channel)).publish(name, data);
   } catch (error) {
     console.warn("[ably]", channel, name, (error as Error).message);
   }
@@ -39,7 +47,7 @@ export async function listQueuePresence(mode: GameMode) {
   try {
     const client = getRealtime();
     if (client.connection.state !== "connected") return [];
-    const members = await client.channels.get(`queue:${mode}`).presence.get();
+    const members = await client.channels.get(ch(`queue:${mode}`)).presence.get();
     const seats = new Map<string, number>();
     for (const member of members) {
       if (!member.clientId) continue;
@@ -59,9 +67,9 @@ export async function tokenRequest(walletId: string) {
   return getRest().auth.createTokenRequest({
     clientId: walletId,
     capability: {
-      [`queue:*`]: ["subscribe", "presence"],
-      [`table:*`]: ["subscribe"],
-      [`wallet:${walletId}`]: ["subscribe"],
+      [ch("queue:*")]: ["subscribe", "presence"],
+      [ch("table:*")]: ["subscribe"],
+      [ch(`wallet:${walletId}`)]: ["subscribe"],
       [INBOX_CHANNEL]: ["publish", "subscribe"],
     },
   });

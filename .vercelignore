@@ -1,0 +1,12 @@
+# Never upload secrets: Vercel gets them from its own environment variables.
+.env
+.env.*
+!.env.example
+server/.env
+# Solana / Rust builds and other local-only folders.
+anchor/
+target/
+programs/**/target/
+server/node_modules/
+dist/
+.claude/

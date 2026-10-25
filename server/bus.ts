@@ -1,4 +1,4 @@
-import { getRealtime, INBOX_CHANNEL } from "./ably.js";
+import { ch, getRealtime, INBOX_CHANNEL } from "./ably.js";
 import { addChat, joinQueue, leaveQueue, playAction } from "./matchmaking.js";
 import { MODES, type ActionType, type GameMode } from "./types.js";
 
@@ -82,14 +82,8 @@ export async function listenInbox() {
   });
 
   for (const mode of MODES) {
-    const channel = realtime.channels.get(`queue:${mode}`);
-    channel.presence.subscribe("enter", (member) => {
-      const walletId = member.clientId;
-      if (!isWallet(walletId)) return;
-      void joinQueue(walletId, mode).catch((error) =>
-        console.warn("[ably] presence join", (error as Error).message),
-      );
-    });
+    const channel = realtime.channels.get(ch(`queue:${mode}`));
+    // Presence never queues anyone (only pressing queue does); leaving it does drop your seat.
     channel.presence.subscribe("leave", (member) => {
       const walletId = member.clientId;
       if (!isWallet(walletId)) return;

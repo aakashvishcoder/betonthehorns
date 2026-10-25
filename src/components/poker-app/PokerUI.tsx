@@ -92,10 +92,7 @@ export function RankMedal({
       role="img"
       aria-label={`${rank} rank`}
     >
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <path className="rank-medal-shade" d="M16 2a14 14 0 0 0 0 28z" />
-        <path className="rank-medal-face" d="M16 2a14 14 0 0 1 0 28z" />
-      </svg>
+      <img src={`/ranks/${tier}.png`} alt="" />
     </span>
   );
 }

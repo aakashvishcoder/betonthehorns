@@ -19,6 +19,7 @@ import { gameModes } from "@/lib/game-modes";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/profile.css";
 import AnalysisPanel from "@/components/analysis/AnalysisPanel";
+import EloChart from "@/components/profile/EloChart";
 
 const STARTING_ELO = 1200;
 
@@ -247,6 +248,8 @@ export default function ProfilePage() {
             );
           })}
         </section>
+
+        {lookedUp && <EloChart walletId={lookedUp} />}
 
         <section className="profile-highlights" aria-label="dNFT milestones">
           {visibleBadges.length === 0 && (

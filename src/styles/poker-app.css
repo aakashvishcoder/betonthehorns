@@ -347,16 +347,16 @@
   display: inline-flex;
   flex: none;
 }
-.rank-medal svg {
+.rank-chip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.rank-medal img {
   display: block;
   width: 100%;
   height: 100%;
-}
-.rank-medal-shade {
-  fill: var(--medal-shade, #8d5524);
-}
-.rank-medal-face {
-  fill: var(--medal-face, #e8b07a);
+  object-fit: contain;
 }
 .rank-medal--bronze {
   --medal-face: #e8b07a;
@@ -371,8 +371,8 @@
   --medal-shade: #a87412;
 }
 .rank-medal--diamond {
-  --medal-face: #b7f4ff;
-  --medal-shade: #1c7c94;
+  --medal-face: #e1b0f7;
+  --medal-shade: #932db9;
 }
 .rank-medal--platinum {
   --medal-face: #f3f0ff;
@@ -742,7 +742,7 @@
   }
   .club-nav {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     height: 100%;
     align-items: center;
     gap: 5px;
@@ -881,7 +881,8 @@
 .club-content > .profile-page,
 .club-content > .play-page,
 .club-content > .table-page,
-.club-content > .leaderboard-page {
+.club-content > .leaderboard-page,
+.club-content > .news-page {
   padding: 0;
 }
 .club-content > .play-page {

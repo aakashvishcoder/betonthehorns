@@ -33,6 +33,28 @@ import { dailyPuzzles, publicPuzzle, today, type Choice } from "./puzzles.js";
 import { attemptsFor, leaderboard, migratePuzzles, saveAttempt, streakFor } from "./puzzle-store.js";
 import { analyze, AnalysisError, migrateAnalysis, savedAnalysis } from "./analysis.js";
 import { migrateSeats } from "./seats.js";
+import { query, withMigrationLock } from "./db.js";
+import { markDbReady } from "./schema.js";
+
+/** Bump when any migration changes, so instances run the setup once more. */
+const SCHEMA_VERSION = "2026-10-25.1";
+
+async function schemaIsCurrent() {
+  try {
+    const r = await query<{ version: string }>(`SELECT version FROM schema_version WHERE id = 1`);
+    return r.rows[0]?.version === SCHEMA_VERSION;
+  } catch {
+    return false; // table missing (first run) or database unreachable: run the setup
+  }
+}
+
+async function markSchemaCurrent() {
+  await query(`CREATE TABLE IF NOT EXISTS schema_version (id INT PRIMARY KEY, version TEXT NOT NULL)`);
+  await query(
+    `INSERT INTO schema_version (id, version) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version`,
+    [SCHEMA_VERSION],
+  );
+}
 import { seatLabel } from "./names.js";
 import { coachHandler } from "./src/coach.ts";
 import { NewsFeed, newsHandler } from "./src/news.ts";
@@ -67,11 +89,24 @@ let booted: Promise<void> | null = null;
 export function ensureReady() {
   if (!booted) {
     booted = (async () => {
-      await migrate();
-      if (dbReady) {
-        await migrateSeats().catch((error) => console.warn("[db] seats", (error as Error).message));
-        await migrateAnalysis().catch((error) => console.warn("[db] analysis", (error as Error).message));
-        await migratePuzzles().catch((error) => console.warn("[db] puzzles", (error as Error).message));
+      // The schema is set up once per version: instances that find it current skip straight
+      // in; otherwise one instance at a time runs the setup (instances start together on Vercel).
+      const setup = async () => {
+        await migrate();
+        if (dbReady) {
+          await migrateSeats().catch((error) => console.warn("[db] seats", (error as Error).message));
+          await migrateAnalysis().catch((error) => console.warn("[db] analysis", (error as Error).message));
+          await migratePuzzles().catch((error) => console.warn("[db] puzzles", (error as Error).message));
+          await markSchemaCurrent().catch((error) => console.warn("[db] schema version", (error as Error).message));
+        }
+      };
+      if (await schemaIsCurrent()) markDbReady();
+      else {
+        await withMigrationLock(setup, schemaIsCurrent).catch((error) =>
+          console.warn("[db] schema setup", (error as Error).message),
+        );
+        // Another instance did (or is doing) the setup: use the database as long as it answers.
+        if (!dbReady && (await query("SELECT 1").then(() => true, () => false))) markDbReady();
       }
       await hydrateLiveMatches();
       void refundOpenEscrows().catch((error) =>

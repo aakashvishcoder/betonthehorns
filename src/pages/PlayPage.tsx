@@ -3,7 +3,7 @@ import { ArrowUpRight, Bot } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import TableQuestion from "@/components/coach/TableQuestion";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
-import { PageHeading, Panel, Pill } from "@/components/poker-app/PokerUI";
+import { PageHeading, Panel, Pill, RankMedal } from "@/components/poker-app/PokerUI";
 import Stepper, { Step } from "@/components/react-bits/Stepper";
 import { api, type ProfileMode, type PublicMatch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -70,7 +70,10 @@ export default function PlayPage() {
               <Panel key={mode.id} className="mode-card">
                 <div className="mode-card-top">
                   <Pill tone="violet">{mode.seats} seats</Pill>
-                  <span>{stats?.rank ?? "Bronze"}</span>
+                  <span className="rank-chip-label">
+                    <RankMedal rank={stats?.rank ?? "Bronze"} size={22} />
+                    {stats?.rank ?? "Bronze"}
+                  </span>
                 </div>
                 <h2>{mode.label}</h2>
                 <p>{mode.tagline}</p>

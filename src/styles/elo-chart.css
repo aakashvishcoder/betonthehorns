@@ -1,0 +1,103 @@
+.elo-chart {
+  display: grid;
+  gap: 14px;
+}
+.elo-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #3b09495c;
+  border-radius: 9px;
+  background: #0e0b11;
+}
+.elo-tabs button {
+  padding: 7px 12px;
+  border-radius: 6px;
+  color: #b9aebe;
+  font-size: 12px;
+}
+.elo-tabs button:hover {
+  color: #edd3fb;
+}
+.elo-tabs button.is-active {
+  background: #6f2088;
+  color: #fbf5fe;
+}
+.elo-chart-panel {
+  display: grid;
+  gap: 10px;
+  padding: 18px 18px 10px;
+}
+.elo-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-height: 30px;
+}
+.elo-readout strong {
+  color: #fbf5fe;
+  font-size: 26px;
+  font-weight: 650;
+}
+.elo-readout span {
+  color: #b9aebe;
+  font-size: 12px;
+}
+.elo-readout b {
+  font-weight: 600;
+}
+.elo-readout .is-up {
+  color: #d081f1;
+}
+.elo-readout .is-down {
+  color: #e98392;
+}
+.elo-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+.elo-grid {
+  stroke: #3b09495c;
+  stroke-width: 1;
+}
+.elo-start {
+  stroke: #e1b0f755;
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+}
+.elo-axis {
+  fill: #8f8396;
+  font-size: 11px;
+}
+.elo-line {
+  fill: none;
+  stroke: #d081f1;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.elo-dot {
+  fill: #0e0b11;
+  stroke: #d081f1;
+  stroke-width: 2;
+}
+.elo-dot.is-hover {
+  fill: #d081f1;
+}
+.elo-cursor {
+  stroke: #e1b0f7;
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+@media (max-width: 640px) {
+  .elo-tabs button {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  .elo-readout strong {
+    font-size: 22px;
+  }
+}

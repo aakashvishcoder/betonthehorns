@@ -3,7 +3,7 @@ import { UsersRound } from "lucide-react";
 import LatticeLoader from "@/components/react-bits/LatticeLoader";
 import { Link, useLocation, useRoute } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
-import { PageHeading, Panel } from "@/components/poker-app/PokerUI";
+import { PageHeading, Panel, RankMedal } from "@/components/poker-app/PokerUI";
 import { api, type QueueSnapshot } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
@@ -50,19 +50,24 @@ export default function QueuePage() {
     void sendInbox(address, "join", { mode: modeId }).catch(() => undefined);
     const leavePresence = enterQueuePresence(address, modeId);
 
-    void api
-      .joinQueue(address, modeId)
-      .then((result) => {
-        if (cancelled) return;
-        setQueue(result.queue);
-        if (result.status === "playing" && result.matchId) goTable(result.matchId);
-      })
-      .catch((err: Error & { body?: { matchId?: string } }) => {
-        if (cancelled) return;
-        // Already seated somewhere: one game at a time, so go back to that table.
-        if (err.body?.matchId) goTable(err.body.matchId);
-        else setError(err.message);
-      });
+    // Join, then check in every 20s: the server only matches seats whose page is still here, and
+    // a check-in also catches a match whose live message was missed. (The counter comes from
+    // presence only, so the reply's queue count is ignored.)
+    const join = () =>
+      void api
+        .joinQueue(address, modeId)
+        .then((result) => {
+          if (cancelled) return;
+          if (result.status === "playing" && result.matchId) goTable(result.matchId);
+        })
+        .catch((err: Error & { body?: { matchId?: string } }) => {
+          if (cancelled) return;
+          // Already seated somewhere: one game at a time, so go back to that table.
+          if (err.body?.matchId) goTable(err.body.matchId);
+          else setError(err.message);
+        });
+    join();
+    const checkIn = window.setInterval(join, 20_000);
 
     const stopQueue = watchGlobalQueue(address, modeId, mode?.seats ?? 2, (data) => {
       if (!cancelled) setQueue(data);
@@ -82,6 +87,7 @@ export default function QueuePage() {
 
     return () => {
       cancelled = true;
+      window.clearInterval(checkIn);
       stopQueue();
       stopWallet();
       stopConnection();
@@ -144,7 +150,10 @@ export default function QueuePage() {
             </div>
             <div>
               <dt>Rank dNFT</dt>
-              <dd>{rank}</dd>
+              <dd className="rank-chip-label">
+                <RankMedal rank={rank} size={28} />
+                {rank}
+              </dd>
             </div>
             <div>
               <dt>Escrow</dt>

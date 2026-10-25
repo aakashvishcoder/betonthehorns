@@ -36,6 +36,7 @@ import {
   stepRunout,
   timeoutAct,
 } from "./engine.js";
+import { waitUntil } from "@vercel/functions";
 import { listQueuePresence, publish } from "./ably.js";
 import { getPool } from "./db.js";
 import { recordAction, saveHistory, syncHistory } from "./history.js";
@@ -175,8 +176,9 @@ function applyDueStep(match: MatchState) {
 }
 
 async function takeLiveMatch(id: string) {
+  // With a database, the row is the truth: another instance may have finished this game.
   const cached = matches.get(id);
-  if (cached?.status === "playing") return cached;
+  if (!dbReady && cached?.status === "playing") return cached;
   const row = await loadLiveMatchRow(id);
   if (!isLiveMatch(row) || !isFresh(row) || isAbandoned(row)) return undefined;
   if (!chats.has(id)) chats.set(id, await loadChat(id));
@@ -214,7 +216,9 @@ export async function hydrateLiveMatches() {
 }
 
 export async function walletMatch(walletId: string) {
-  const id = (await seatedAt(walletId)) ?? byWallet.get(walletId) ?? (await findPlayingMatchId(walletId));
+  const id = dbReady
+    ? ((await seatedAt(walletId)) ?? (await findPlayingMatchId(walletId)))
+    : byWallet.get(walletId);
   if (!id) return undefined;
   const live = await takeLiveMatch(id);
   if (live?.status === "playing") return live;
@@ -273,24 +277,6 @@ function mergeSeats(...lists: QueueSeat[][]) {
   return [...seats.entries()]
     .map(([walletId, joinedAt]) => ({ walletId, joinedAt }))
     .sort((left, right) => left.joinedAt - right.joinedAt);
-}
-
-export async function pullGlobalQueue(mode: GameMode) {
-  const present = await listQueuePresence(mode);
-  const sitting = dbReady ? await playingWalletIds() : new Set(byWallet.keys());
-  const waiting: QueueSeat[] = [];
-  for (const seat of present) {
-    if (sitting.has(seat.walletId)) continue;
-    waiting.push(seat);
-    if (dbReady) {
-      await enqueueSeat(seat.walletId, mode).catch((error) =>
-        console.warn("[queue] sync", (error as Error).message),
-      );
-    } else if (!queueOf(mode).some((row) => row.walletId === seat.walletId)) {
-      queueOf(mode).push(seat);
-    }
-  }
-  return waiting;
 }
 
 export async function queueSnapshot(mode: GameMode) {
@@ -408,7 +394,9 @@ function leaveAllQueues(walletId: string) {
 }
 
 async function tryMatch(mode: GameMode, pinned: string[] = []) {
-  await pullGlobalQueue(mode);
+  // Only people who pressed queue (and whose queue page is still checking in) are matched.
+  // Seats used to be pulled in from Ably presence too, which re-matched two players the moment
+  // their game ended if a presence entry lingered ("the match restarts").
   if (pinned.length && dbReady) {
     for (const walletId of pinned) {
       await enqueueSeat(walletId, mode).catch(() => undefined);
@@ -547,13 +535,27 @@ export async function startPractice(walletId: string, mode: GameMode) {
 }
 
 /** End-of-game work, once per match across instances: Elo, hand history, style data, seats. */
+/**
+ * End-of-game work, run by the request that finished the game. Seats and hand history are
+ * awaited (so nobody can "Return to table" and Analyze always has the hands) and are safe to
+ * repeat, so they run before the once-only claim. Elo settlement (Solana) and style stats
+ * (Snowflake) take seconds, so they run after the response via waitUntil: Vercel keeps the
+ * function alive until they finish (plain un-awaited work would be frozen); on a long-running
+ * server it is simply a background promise.
+ */
 async function finalizeOnce(match: MatchState) {
-  if (!(await claimFinalize(match.id).catch(() => false))) return;
-  await releaseSeats(match.id).catch((error) => console.warn("[seats] release", (error as Error).message));
   for (const player of match.players) if (byWallet.get(player.walletId) === match.id) byWallet.delete(player.walletId);
-  void import("./settle.js").then(({ settleMatch }) => settleMatch(match));
-  await saveHistory(match);
-  void finishTracking(match);
+  await releaseSeats(match.id).catch((error) => console.warn("[seats] release", (error as Error).message));
+  await saveHistory(match).catch((error) => console.warn("[history] save", (error as Error).message));
+  if (!(await claimFinalize(match.id).catch(() => false))) return;
+  waitUntil(
+    (async () => {
+      await import("./settle.js")
+        .then(({ settleMatch }) => settleMatch(match))
+        .catch((error) => console.warn("[elo] settle", (error as Error).message));
+      await finishTracking(match);
+    })(),
+  );
 }
 
 async function publishQueue(mode: GameMode) {
@@ -571,7 +573,7 @@ async function fanoutMatch(match: MatchState, name = "state") {
       you: privateView(match, player.walletId),
     });
   }
-  if (match.status === "finished") void finalizeOnce(match);
+  if (match.status === "finished") await finalizeOnce(match);
   void saveMatchSnapshot(
     match.id,
     match.status,
@@ -662,6 +664,8 @@ async function advanceMatch(id: string, move?: Move) {
   let match: MatchState | undefined;
   try {
     await client.query("BEGIN");
+    // Never queue behind a stuck lock for long: a refresh falls back to reading, a move retries.
+    await client.query("SET LOCAL lock_timeout = '8s'");
     const locked = await client.query<{ live_state: unknown }>(
       `SELECT live_state FROM matches WHERE id = $1 AND status = 'playing' FOR UPDATE`,
       [id],
@@ -705,6 +709,9 @@ async function advanceMatch(id: string, move?: Move) {
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (move && (error as { code?: string }).code === "55P03") {
+      throw new Error("The table is busy. Try that again.");
+    }
     if (move) throw error;
     console.warn("[table] advance", (error as Error).message);
     return takeLiveMatch(id);
@@ -782,13 +789,17 @@ export function pulse() {
   tick();
 }
 
-setInterval(tick, 250);
-
-setInterval(() => {
-  void Promise.all(MODES.map((mode) => publishQueue(mode))).catch((error) =>
-    console.warn("[queue]", (error as Error).message),
-  );
-}, 5000);
+// Background timers only on a long-running server (local, Vultr). On Vercel an instance is
+// frozen after each response, and a timer caught mid-transaction held a table's lock for ~20s;
+// there, tables advance on every player request and the 2-second table refresh instead.
+if (!process.env.VERCEL) {
+  setInterval(tick, 250);
+  setInterval(() => {
+    void Promise.all(MODES.map((mode) => publishQueue(mode))).catch((error) =>
+      console.warn("[queue]", (error as Error).message),
+    );
+  }, 5000);
+}
 
 export function listMatches() {
   return [...matches.values()].map((match) => ({
