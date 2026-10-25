@@ -26,6 +26,11 @@ pub mod horns_elo {
         crate::instructions::register_player::handle_register_player(ctx, mode)
     }
 
+    /// Game server creates a player's rating account for one mode at 1200, paying the rent.
+    pub fn sponsor_player(ctx: Context<SponsorPlayer>, wallet: Pubkey, mode: GameMode) -> Result<()> {
+        crate::instructions::sponsor_player::handle_sponsor_player(ctx, wallet, mode)
+    }
+
     /// Game server opens a match and commits to the shuffle seed before the deal.
     pub fn create_match(
         ctx: Context<CreateMatch>,

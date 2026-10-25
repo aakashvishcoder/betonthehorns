@@ -1,3 +1,5 @@
+import { aiName, isAi } from "./src/ai/personas.ts";
+
 const names = new Map<string, string>();
 
 export function rememberName(walletId: string, name: string | null) {
@@ -10,6 +12,7 @@ export function lookupName(walletId: string) {
 }
 
 export function seatLabel(walletId: string) {
+  if (isAi(walletId)) return aiName(walletId);
   return (
     lookupName(walletId) ??
     `${walletId.slice(0, 4)}…${walletId.slice(-4)}`

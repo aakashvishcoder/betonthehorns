@@ -1,4 +1,4 @@
-import type { Action, SitAndGo } from "../game.ts";
+import type { Action, Legal, SitAndGo } from "../game.ts";
 import { type SnowflakeAuth, cortexMove } from "./cortex.ts";
 import type { Persona } from "./personas.ts";
 import { type Situation, legalize, potOdds, ruleMove } from "./policy.ts";
@@ -6,6 +6,39 @@ import { equity } from "./strength.ts";
 import { type Style, clamp } from "./style.ts";
 
 export type AiDecision = { action: Action; source: "cortex" | "rules"; error?: string; tokens?: { in: number; out: number } };
+
+/**
+ * What an AI seat can see, independent of which engine runs the table.
+ * Cards use two-character codes with a lowercase suit, e.g. "As", "Td".
+ */
+export type TableView = {
+  street: string;
+  cards: string[];
+  board: string[];
+  pot: number;
+  stack: number;
+  smallBlind: number;
+  bigBlind: number;
+  /** Everyone else still in the game (not busted). */
+  opponents: { stack: number; folded: boolean; allIn: boolean }[];
+  legal: Legal;
+};
+
+/** Adapter for our own Sit & Go engine (server/src/game.ts). */
+export function viewFromSitAndGo(game: SitAndGo, id: string): TableView {
+  const me = game.seats[game.seatOf(id)]!;
+  return {
+    street: game.street,
+    cards: me.cards,
+    board: game.board,
+    pot: game.pot,
+    stack: me.stack,
+    smallBlind: game.smallBlind,
+    bigBlind: game.bigBlind,
+    opponents: game.seats.filter(s => s.id !== id && !s.out).map(s => ({ stack: s.stack, folded: s.folded, allIn: s.allIn })),
+    legal: game.legal(id),
+  };
+}
 
 /**
  * One AI opponent. The engine does the poker math (equity, pot odds, legal moves) and blurs
@@ -30,36 +63,30 @@ export class AiPlayer {
     this.random = random;
   }
 
-  situation(game: SitAndGo): Situation {
-    const view = game.view(this.id);
-    const me = game.seats[game.seatOf(this.id)]!;
-    const opponents = game.seats.filter(s => s.id !== this.id && !s.folded && !s.out).length;
-    const trueEquity = equity(me.cards, game.board, opponents, 300, this.random);
+  situation(view: TableView): Situation {
+    const opponents = view.opponents.filter(o => !o.folded).length;
+    const trueEquity = equity(view.cards, view.board, opponents, 300, this.random);
     // Lower skill = fuzzier read of its own hand (up to ±~20% at skill 0).
     const blur = (this.random() + this.random() + this.random() - 1.5) * 0.25 * (1 - this.skill);
     return {
-      street: game.street,
+      street: view.street,
       equity: clamp(trueEquity + blur, 0, 1),
-      toCall: view.legal!.toCall,
-      pot: game.pot,
-      stack: me.stack,
-      bigBlind: game.bigBlind,
-      legal: view.legal!,
+      toCall: view.legal.toCall,
+      pot: view.pot,
+      stack: view.stack,
+      bigBlind: view.bigBlind,
+      legal: view.legal,
     };
   }
 
-  prompt(game: SitAndGo, s: Situation, suggestion: Action) {
-    const me = game.seats[game.seatOf(this.id)]!;
+  prompt(view: TableView, s: Situation, suggestion: Action) {
     const level = this.skill < 0.33 ? "a beginner" : this.skill < 0.66 ? "an intermediate player" : "a strong player";
     const system =
       `You are ${this.persona.name}, ${this.persona.voice}, playing no-limit hold'em Sit & Go at the level of ${level}. ` +
       `Your style: you play about ${Math.round(this.style.vpip * 100)}% of hands, raise preflop about ${Math.round(this.style.pfr * 100)}%, ` +
       `aggression factor ${this.style.aggression.toFixed(1)}. Stay in character. ` +
       `Reply with JSON only: {"action":"fold"|"check"|"call"|"raise","amount":<total to raise to, or 0>}.`;
-    const others = game.seats
-      .filter(x => x.id !== this.id && !x.out)
-      .map(x => `${x.stack}${x.folded ? " (folded)" : x.allIn ? " (all in)" : ""}`)
-      .join(", ");
+    const others = view.opponents.map(o => `${o.stack}${o.folded ? " (folded)" : o.allIn ? " (all in)" : ""}`).join(", ");
     const legalText = [
       s.legal.canCheck ? "check" : `call ${s.toCall}`,
       "fold",
@@ -68,20 +95,20 @@ export class AiPlayer {
       .filter(Boolean)
       .join(", ");
     const user =
-      `Street: ${s.street}. Your cards: ${me.cards.join(" ")}. Board: ${game.board.join(" ") || "none"}. ` +
-      `Pot ${s.pot}, to call ${s.toCall}, your stack ${s.stack} (${Math.round(s.stack / s.bigBlind)} big blinds), blinds ${game.smallBlind}/${game.bigBlind}. ` +
+      `Street: ${s.street}. Your cards: ${view.cards.join(" ")}. Board: ${view.board.join(" ") || "none"}. ` +
+      `Pot ${s.pot}, to call ${s.toCall}, your stack ${s.stack} (${Math.round(s.stack / s.bigBlind)} big blinds), blinds ${view.smallBlind}/${view.bigBlind}. ` +
       `Opponent stacks: ${others}. Your estimated chance to win: ${Math.round(s.equity * 100)}%` +
       (s.toCall ? `; pot odds need ${Math.round(potOdds(s) * 100)}%` : "") +
       `. Legal: ${legalText}. A coach suggests: ${suggestion.type === "raise" ? `raise to ${suggestion.to}` : suggestion.type}. Your move?`;
     return { system, user };
   }
 
-  async decide(game: SitAndGo, options: { useCortex: boolean; fetchImpl?: typeof fetch; timeoutMs?: number }): Promise<AiDecision> {
-    const s = this.situation(game);
+  async decide(view: TableView, options: { useCortex: boolean; fetchImpl?: typeof fetch; timeoutMs?: number }): Promise<AiDecision> {
+    const s = this.situation(view);
     const fallback = legalize(ruleMove(s, this.style, this.random), s.legal);
     if (!options.useCortex || !this.auth) return { action: fallback, source: "rules" };
     try {
-      const { system, user } = this.prompt(game, s, fallback);
+      const { system, user } = this.prompt(view, s, fallback);
       const { move, tokens } = await cortexMove(this.auth, this.persona.model, system, user, {
         fetchImpl: options.fetchImpl,
         timeoutMs: options.timeoutMs,

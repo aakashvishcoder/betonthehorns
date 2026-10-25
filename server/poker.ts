@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { shuffledDeck } from "./src/cards.ts";
 import type { Card } from "./types.js";
 
 const SUITS = ["S", "H", "D", "C"] as const;
@@ -24,6 +25,20 @@ export function makeDeck(): Card[] {
     }
   }
   return deck;
+}
+
+const SUIT_OF: Record<string, Card["suit"]> = { s: "S", h: "H", d: "D", c: "C" };
+
+/**
+ * Provably fair deck for one hand: HMAC-SHA256(seed, hand) drives a Fisher-Yates shuffle.
+ * The seed's hash is committed on Solana before the first deal and the seed is revealed when
+ * the match ends, so anyone can replay every hand. Cards are dealt by popping from the end.
+ */
+export function seededDeck(seed: Uint8Array, hand: number): Card[] {
+  return shuffledDeck(seed, hand).map((code) => ({
+    rank: "23456789TJQKA".indexOf(code[0]!) + 2,
+    suit: SUIT_OF[code[1]!]!,
+  }));
 }
 
 export function shuffle<T>(items: T[]): T[] {

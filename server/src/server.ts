@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { AiPlayer } from "./ai/ai-player.ts";
+import { AiPlayer, viewFromSitAndGo } from "./ai/ai-player.ts";
 import type { SnowflakeAuth } from "./ai/cortex.ts";
 import { aiSeats, isAi, personaOf } from "./ai/personas.ts";
 import { MemoryStyleStore, type StyleStore } from "./ai/style-store.ts";
@@ -137,7 +137,7 @@ export function startGameServer({ port, server, chain, styleStore = new MemorySt
     const [min, max] = ai.thinkMs ?? [1_000, 2_500];
     const pause = min + Math.random() * (max - min) + (bigSpot && humanConnected ? 1_500 : 0);
 
-    const decision = ais.get(toAct)!.decide(table.game, {
+    const decision = ais.get(toAct)!.decide(viewFromSitAndGo(table.game, toAct), {
       useCortex: humanConnected,
       fetchImpl: ai.fetchImpl,
       timeoutMs: ai.cortexTimeoutMs,

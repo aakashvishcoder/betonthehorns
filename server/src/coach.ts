@@ -186,6 +186,8 @@ export type CoachHandlerOptions = {
   cap?: DailyCap | null;
   /** True if this wallet is seated at a ranked table (coach is off there). */
   inRankedGame?: (wallet: string) => boolean;
+  /** The signed-in wallet for this request, if the host server has sessions (preferred over body.wallet). */
+  walletOf?: (req: IncomingMessage) => string | null;
   /** Web search tool (SerpApi); omit to answer from the model's knowledge only. */
   search?: CoachSearch;
   fetchImpl?: typeof fetch;
@@ -193,7 +195,7 @@ export type CoachHandlerOptions = {
 };
 
 /** POST /api/coach  { browserId, messages, wallet? }  ->  { reply, sources, remaining? } */
-export function coachHandler({ apiKey, cap = COACH.dailyCap === null ? null : new DailyCap(COACH.dailyCap), inRankedGame = () => false, search, fetchImpl, log = () => {} }: CoachHandlerOptions) {
+export function coachHandler({ apiKey, cap = COACH.dailyCap === null ? null : new DailyCap(COACH.dailyCap), inRankedGame = () => false, walletOf, search, fetchImpl, log = () => {} }: CoachHandlerOptions) {
   const json = (res: ServerResponse, status: number, body: object) =>
     res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 
@@ -216,7 +218,8 @@ export function coachHandler({ apiKey, cap = COACH.dailyCap === null ? null : ne
     const browserId = typeof body.browserId === "string" && /^[\w-]{8,64}$/.test(body.browserId) ? body.browserId : null;
     const history = cleanHistory(body.messages);
     if (!browserId || !history) return json(res, 400, { error: "Bad request." });
-    if (typeof body.wallet === "string" && inRankedGame(body.wallet)) {
+    const wallet = walletOf ? walletOf(req) : typeof body.wallet === "string" ? body.wallet : null;
+    if (wallet && inRankedGame(wallet)) {
       return json(res, 403, { error: "The coach is off during ranked games. Good luck!" });
     }
     if (cap && !cap.take(browserId)) return json(res, 429, { error: "You've used today's coach questions. Come back tomorrow!", remaining: 0 });

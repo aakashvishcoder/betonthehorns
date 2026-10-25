@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SitAndGo } from "../game.ts";
-import { AiPlayer } from "./ai-player.ts";
+import { AiPlayer, viewFromSitAndGo } from "./ai-player.ts";
 import { cortexMove, parseMove } from "./cortex.ts";
 import { PERSONAS, aiName, aiSeats, personaOf } from "./personas.ts";
 import { legalize, ruleMove } from "./policy.ts";
@@ -125,18 +125,18 @@ test("AI player: Cortex picks the move, bad replies fall back to rules", async (
     assert.equal(body.model, "claude-haiku-4-5");
     return Response.json({ choices: [{ message: { content: '{"action":"raise","amount":5000}' } }] });
   };
-  const d1 = await shark.decide(game, { useCortex: true, fetchImpl: good });
+  const d1 = await shark.decide(viewFromSitAndGo(game, "ai:shark:1"), { useCortex: true, fetchImpl: good });
   assert.equal(d1.source, "cortex");
   assert.deepEqual(d1.action, { type: "raise", to: 1500 }); // clamped to the stack
   assert.match(prompt, /Your cards: \S\S \S\S/);
   assert.match(prompt, /Legal: check, fold, raise to 40-1500/);
 
   const broken: typeof fetch = async () => new Response("down", { status: 503 });
-  const d2 = await shark.decide(game, { useCortex: true, fetchImpl: broken });
+  const d2 = await shark.decide(viewFromSitAndGo(game, "ai:shark:1"), { useCortex: true, fetchImpl: broken });
   assert.equal(d2.source, "rules");
   assert.match(d2.error!, /503/);
 
-  const d3 = await shark.decide(game, { useCortex: false });
+  const d3 = await shark.decide(viewFromSitAndGo(game, "ai:shark:1"), { useCortex: false });
   assert.equal(d3.source, "rules");
   assert.equal(d3.error, undefined);
 });
