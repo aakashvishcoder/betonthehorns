@@ -341,7 +341,7 @@
 .felt-seat-box:has(.rank-medal--bronze) { --medal-face: #e8b07a; }
 .felt-seat-box:has(.rank-medal--silver) { --medal-face: #f3f5f8; }
 .felt-seat-box:has(.rank-medal--gold) { --medal-face: #ffe08a; }
-.felt-seat-box:has(.rank-medal--diamond) { --medal-face: #b7f4ff; }
+.felt-seat-box:has(.rank-medal--diamond) { --medal-face: #e1b0f7; }
 .felt-seat-box:has(.rank-medal--platinum) { --medal-face: #f3f0ff; }
 .felt-seat-tag {
   position: absolute;

@@ -3,7 +3,7 @@ import { UsersRound } from "lucide-react";
 import LatticeLoader from "@/components/react-bits/LatticeLoader";
 import { Link, useLocation, useRoute } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
-import { PageHeading, Panel } from "@/components/poker-app/PokerUI";
+import { PageHeading, Panel, RankMedal } from "@/components/poker-app/PokerUI";
 import { api, type QueueSnapshot } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
@@ -150,7 +150,10 @@ export default function QueuePage() {
             </div>
             <div>
               <dt>Rank dNFT</dt>
-              <dd>{rank}</dd>
+              <dd className="rank-chip-label">
+                <RankMedal rank={rank} size={28} />
+                {rank}
+              </dd>
             </div>
             <div>
               <dt>Escrow</dt>

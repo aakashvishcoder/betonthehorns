@@ -12,11 +12,9 @@ import {
 } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Brand, Chip, TablePreview } from "@/components/poker/PokerVisuals";
-import NewsTicker from "@/components/poker/NewsTicker";
 import { useAuth } from "@/lib/auth";
 import SmoothScroll from "@/components/poker/SmoothScroll";
 import ScrollReveal from "@/components/react-bits/ScrollReveal";
-import ScrollVelocity from "@/components/react-bits/ScrollVelocity";
 import {
   PokerAtmosphere,
   PokerHeroScene,
@@ -110,6 +108,7 @@ export default function Home() {
         <nav className="desktop-nav" aria-label="Main navigation">
           <a href="#the-table">Modes</a>
           <a href="#how-it-works">How it works</a>
+          <a href="/news">News</a>
           <a href="/leaderboard">Leaderboard</a>
         </nav>
         <div className="header-actions">
@@ -145,6 +144,7 @@ export default function Home() {
             {[
               ["Modes", "#the-table"],
               ["How it works", "#how-it-works"],
+              ["News", "/news"],
               ["Leaderboard", "/leaderboard"],
             ].map(([text, link]) => (
               <a key={link} href={link} onClick={() => setMenuOpen(false)}>
@@ -212,30 +212,6 @@ export default function Home() {
               <ArrowDown size={15} />
             </a>
           </section>
-          <div className="suit-marquee" aria-hidden="true">
-            <ScrollVelocity
-              texts={[
-                <span key="modes">
-                  <b>♠</b> HANDS UP <b>♥</b> SNG 4 <b>♣</b> SNG 6 <b>♦</b> ELO
-                  ESCROW
-                </span>,
-                <span key="house">
-                  RANKED HOLD’EM <b>♠</b> SOLANA <b>♥</b> RANK dNFTS <b>♦</b>{" "}
-                  PUBLIC TABLES
-                </span>,
-              ]}
-              velocity={34}
-              fontSize={15}
-              fontWeight={600}
-              color="#f4e9fb"
-              skewWithVelocity={7}
-              fadeEdges
-              outlineAlternate
-              gap={40}
-              numCopies={8}
-            />
-          </div>
-          <NewsTicker />
           <section
             id="the-table"
             className="experience-section page-width"
@@ -442,9 +418,6 @@ export default function Home() {
               </span>
             </button>
             <p>A Solana wallet is the only ticket in.</p>
-            <span className="closing-star" aria-hidden="true">
-              ✳
-            </span>
           </div>
         </section>
         </div>

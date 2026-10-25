@@ -204,6 +204,11 @@ export const api = {
       "/api/puzzles/leaderboard",
     ),
   health: () => request<{ ok: boolean; db: boolean }>("/api/health"),
+  news: () =>
+    request<{
+      items: { title: string; link: string; source: string; date: string }[];
+      updatedAt: number;
+    }>("/api/news"),
   authChallenge: (walletId: string) =>
     request<{ nonce: string; message: string }>(`/api/auth/challenge/${walletId}`),
   login: (walletId: string, signature: string, nonce: string) =>

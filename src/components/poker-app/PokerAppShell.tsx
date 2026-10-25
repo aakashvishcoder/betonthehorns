@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   LayoutGrid,
+  Newspaper,
   Puzzle,
   Trophy,
   UserRound,
@@ -24,7 +25,14 @@ import { useAuth } from "@/lib/auth";
 import "@/styles/poker-app.css";
 
 const PlasmaWave = lazy(() => import("@/components/react-bits/PlasmaWave"));
-type Section = "profile" | "play" | "table" | "leaderboard" | "queue" | "puzzles";
+type Section =
+  | "profile"
+  | "play"
+  | "table"
+  | "leaderboard"
+  | "queue"
+  | "puzzles"
+  | "news";
 const motionContext = createContext({
   paused: false,
   effectsPaused: false,
@@ -68,6 +76,7 @@ export default function PokerAppShell({
   const navigation = [
     { id: "play", label: "Play", href: "/play", icon: LayoutGrid },
     { id: "puzzles", label: "Puzzles", href: "/puzzles", icon: Puzzle },
+    { id: "news", label: "News", href: "/news", icon: Newspaper },
     { id: "leaderboard", label: "Leaderboard", href: "/leaderboard", icon: Trophy },
     { id: "profile", label: "Profile", href: profileHref, icon: UserRound },
   ] as const;

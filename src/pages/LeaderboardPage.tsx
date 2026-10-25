@@ -13,6 +13,7 @@ import {
   PageHeading,
   Panel,
   Pill,
+  RankMedal,
 } from "@/components/poker-app/PokerUI";
 import { api, type LeaderboardRow } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -133,7 +134,10 @@ export default function LeaderboardPage() {
                     <span>{shortAddress(player.address)}</span>
                   </div>
                   <b>{player.elo}</b>
-                  <small>{rankFromElo(player.elo)} dNFT</small>
+                  <small className="rank-chip-label">
+                    <RankMedal rank={rankFromElo(player.elo)} size={18} />
+                    {rankFromElo(player.elo)} dNFT
+                  </small>
                 </article>
               ))}
             </div>
@@ -199,7 +203,8 @@ export default function LeaderboardPage() {
                             {player.address === address && <em>You</em>}
                           </strong>
                           <span>{shortAddress(player.address)}</span>
-                          <small className="leaderboard-mobile-meta">
+                          <small className="leaderboard-mobile-meta rank-chip-label">
+                            <RankMedal rank={rankFromElo(player.elo)} size={16} />
                             {rankFromElo(player.elo)} · {player.games}{" "}
                             {player.games === 1 ? "game" : "games"}
                           </small>
@@ -209,7 +214,12 @@ export default function LeaderboardPage() {
                     <td>
                       <strong>{player.elo}</strong>
                     </td>
-                    <td className="leaderboard-optional">{rankFromElo(player.elo)}</td>
+                    <td className="leaderboard-optional">
+                      <span className="rank-chip-label">
+                        <RankMedal rank={rankFromElo(player.elo)} size={22} />
+                        {rankFromElo(player.elo)}
+                      </span>
+                    </td>
                     <td className="leaderboard-optional">{player.games}</td>
                     <td className="leaderboard-optional">
                       <Movement value={player.move} />
