@@ -10,12 +10,14 @@ import RequireAuth from "@/components/auth/RequireAuth";
 import { AuthProvider } from "@/lib/auth";
 import { isGameModeId } from "@/lib/game-modes";
 import Home from "./pages/Home";
+import CoachWidget from "@/components/coach/CoachWidget";
 
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const PlayPage = lazy(() => import("./pages/PlayPage"));
 const QueuePage = lazy(() => import("./pages/QueuePage"));
 const TablePage = lazy(() => import("./pages/TablePage"));
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
+const PuzzlesPage = lazy(() => import("./pages/PuzzlesPage"));
 
 function Protected({ children }: { children: ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -52,6 +54,9 @@ export default function App() {
                   <Route path="/leaderboard">
                     <LeaderboardPage />
                   </Route>
+                  <Route path="/puzzles">
+                    <PuzzlesPage />
+                  </Route>
                   <Route path="/play">
                     <Protected>
                       <PlayPage />
@@ -77,6 +82,7 @@ export default function App() {
                   <Route component={NotFound} />
                 </Switch>
               </Suspense>
+              <CoachWidget />
             </PokerMotionProvider>
           </AuthProvider>
         </TooltipProvider>

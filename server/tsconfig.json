@@ -7,7 +7,10 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts"],
+  // server/src is the WebSocket game server (coach, news, AI practice, Solana Elo); it has its own tsconfig.
+  "exclude": ["src", "node_modules", ".cache"]
 }
