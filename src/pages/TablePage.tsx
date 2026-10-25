@@ -148,9 +148,11 @@ export default function TablePage() {
         revision?: number;
       };
       if (payload.match) {
+        if (payload.match.id && payload.match.id !== matchId) return;
         remember(payload.match, payload.you);
         return;
       }
+      if (payload.id && payload.id !== matchId) return;
       if (payload.id) remember(payload as PublicMatch);
     };
 

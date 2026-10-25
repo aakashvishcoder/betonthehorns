@@ -36,6 +36,7 @@ export async function migrate() {
       PRIMARY KEY (match_id, wallet_id)
     );
   `);
+  await query(`ALTER TABLE elo_locks ADD COLUMN IF NOT EXISTS pre_elo INTEGER`);
   await query(`
     CREATE TABLE IF NOT EXISTS showcase (
       wallet_id TEXT NOT NULL REFERENCES wallets(wallet_id) ON DELETE CASCADE,
@@ -190,8 +191,30 @@ export async function removeQueuedWallet(walletId: string) {
   return result.rows[0]?.mode ?? null;
 }
 
+export async function keepQueueSeats(mode: GameMode, keep: string[]) {
+  if (keep.length === 0) {
+    await query(`DELETE FROM queue_seats WHERE mode = $1`, [mode]);
+    return;
+  }
+  await query(
+    `DELETE FROM queue_seats WHERE mode = $1 AND NOT (wallet_id = ANY($2::text[]))`,
+    [mode, keep],
+  );
+}
+
+export async function playingWalletIds() {
+  if (!dbReady) return new Set<string>();
+  const result = await query<{ wallet_id: string }>(
+    `SELECT p.wallet_id
+     FROM match_players p
+     JOIN matches m ON m.id = p.match_id
+     WHERE m.status = 'playing'`,
+  );
+  return new Set(result.rows.map((row) => row.wallet_id));
+}
+
 /** Takes the oldest seats, or leaves the queue untouched when it is short. */
-export async function claimQueueSeats(mode: GameMode, need: number) {
+export async function claimQueueSeats(mode: GameMode, need: number, allowed?: string[]) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -202,11 +225,14 @@ export async function claimQueueSeats(mode: GameMode, need: number) {
        FOR UPDATE`,
       [mode],
     );
-    if (listed.rows.length < need) {
+    const poolSeats = allowed
+      ? listed.rows.filter((row) => allowed.includes(row.wallet_id))
+      : listed.rows;
+    if (poolSeats.length < need) {
       await client.query("COMMIT");
       return null;
     }
-    const taken = listed.rows.slice(0, need).map((row) => row.wallet_id);
+    const taken = poolSeats.slice(0, need).map((row) => row.wallet_id);
     await client.query(`DELETE FROM queue_seats WHERE wallet_id = ANY($1::text[])`, [taken]);
     await client.query("COMMIT");
     return taken;
@@ -340,6 +366,11 @@ export async function lockEscrow(
          ON CONFLICT (wallet_id, mode) DO NOTHING`,
         [seat.walletId, mode, STARTING_ELO],
       );
+      const before = await client.query<{ elo: number }>(
+        `SELECT elo FROM player_stats WHERE wallet_id = $1 AND mode = $2`,
+        [seat.walletId, mode],
+      );
+      const preElo = before.rows[0]?.elo ?? STARTING_ELO;
       const updated = await client.query<{ elo: number }>(
         `UPDATE player_stats SET elo = elo - $3
          WHERE wallet_id = $1 AND mode = $2 AND elo >= $3
@@ -350,8 +381,9 @@ export async function lockEscrow(
         throw new Error(`Need ${seat.stake} ELO in this mode to sit down`);
       }
       await client.query(
-        `INSERT INTO elo_locks (match_id, wallet_id, mode, stake) VALUES ($1, $2, $3, $4)`,
-        [matchId, seat.walletId, mode, seat.stake],
+        `INSERT INTO elo_locks (match_id, wallet_id, mode, stake, pre_elo)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [matchId, seat.walletId, mode, seat.stake, preElo],
       );
     }
     await client.query("COMMIT");
@@ -364,11 +396,33 @@ export async function lockEscrow(
 }
 
 export async function escrowLocks(matchId: string) {
-  const result = await query<{ wallet_id: string; stake: number }>(
-    `SELECT wallet_id, stake FROM elo_locks WHERE match_id = $1`,
+  const result = await query<{
+    wallet_id: string;
+    stake: number;
+    pre_elo: number | null;
+    settled: boolean;
+  }>(
+    `SELECT wallet_id, stake, pre_elo, settled FROM elo_locks WHERE match_id = $1`,
     [matchId],
   );
-  return new Map(result.rows.map((row) => [row.wallet_id, row.stake]));
+  return new Map(
+    result.rows.map((row) => [
+      row.wallet_id,
+      {
+        stake: row.stake,
+        preElo: row.pre_elo,
+        settled: row.settled,
+      },
+    ]),
+  );
+}
+
+export async function matchAlreadySettled(matchId: string) {
+  const result = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM elo_history WHERE match_id = $1`,
+    [matchId],
+  );
+  return Number(result.rows[0]?.n ?? 0) > 0;
 }
 
 /** Give back stakes whose table is gone. A live table in live_state keeps its lock. */
@@ -414,6 +468,7 @@ export async function applySettlement(input: {
   hands: number;
   players: { walletId: string; elo: number; delta: number; won: boolean }[];
 }) {
+  if (await matchAlreadySettled(input.matchId)) return;
   await query(`UPDATE matches SET reveal_seed = $2 WHERE id = $1`, [
     input.matchId,
     input.seed,
@@ -606,6 +661,65 @@ export async function listLiveMatches() {
   return result.rows;
 }
 
+export async function loadMatchView(id: string) {
+  if (!dbReady) return null;
+  const result = await query<{
+    id: string;
+    status: string;
+    snapshot: unknown;
+    live_state: unknown;
+    reveal_seed: string | null;
+  }>(
+    `SELECT id, status, snapshot, live_state, reveal_seed FROM matches WHERE id = $1`,
+    [id],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function listLeftoverPlayingIds() {
+  if (!dbReady) return [];
+  const result = await query<{ id: string }>(
+    `SELECT id FROM matches WHERE status = 'playing'`,
+  );
+  return result.rows.map((row) => row.id);
+}
+
+export async function clearQueueSeats() {
+  if (!dbReady) return;
+  await query(`DELETE FROM queue_seats`);
+}
+
+export async function refundMatchLocks(matchId: string) {
+  if (!dbReady) return;
+  const open = await query<{ wallet_id: string; mode: GameMode; stake: number }>(
+    `SELECT wallet_id, mode, stake FROM elo_locks WHERE match_id = $1 AND settled = FALSE`,
+    [matchId],
+  );
+  for (const lock of open.rows) {
+    await query(`UPDATE player_stats SET elo = elo + $3 WHERE wallet_id = $1 AND mode = $2`, [
+      lock.wallet_id,
+      lock.mode,
+      lock.stake,
+    ]);
+    await query(`DELETE FROM elo_locks WHERE match_id = $1 AND wallet_id = $2`, [
+      matchId,
+      lock.wallet_id,
+    ]);
+  }
+}
+
+export async function closeLiveMatch(matchId: string) {
+  if (!dbReady) return;
+  await query(
+    `UPDATE matches
+     SET status = 'finished',
+         live_state = NULL,
+         finished_at = NOW()
+     WHERE id = $1`,
+    [matchId],
+  );
+}
+
 export async function findPlayingMatchId(walletId: string) {
   if (!dbReady) return null;
   const result = await query<{ id: string }>(
@@ -679,6 +793,50 @@ export async function insertMatchPlayers(
        ON CONFLICT DO NOTHING`,
       [matchId, player.walletId, player.seat, player.bot],
     );
+  }
+}
+
+/** Rebuild ratings from each unique match delta so leftover refunds cannot stack. */
+export async function rebuildRatingsFromHistory() {
+  if (!dbReady) return;
+  const rows = await query<{
+    wallet_id: string;
+    mode: GameMode;
+    match_id: string | null;
+    delta: number;
+    time: Date;
+  }>(
+    `SELECT wallet_id, mode, match_id, delta, time
+     FROM elo_history
+     WHERE source = 'settled'
+     ORDER BY time ASC`,
+  );
+  const seen = new Set<string>();
+  const running = new Map<string, number>();
+  for (const row of rows.rows) {
+    const matchKey = `${row.wallet_id}:${row.mode}:${row.match_id ?? row.time.toISOString()}`;
+    if (seen.has(matchKey)) continue;
+    seen.add(matchKey);
+    const key = `${row.wallet_id}:${row.mode}`;
+    const next = Math.max(0, (running.get(key) ?? STARTING_ELO) + row.delta);
+    running.set(key, next);
+    await query(
+      `UPDATE elo_history
+       SET elo = $4
+       WHERE wallet_id = $1 AND mode = $2 AND match_id IS NOT DISTINCT FROM $3`,
+      [row.wallet_id, row.mode, row.match_id, next],
+    );
+  }
+  for (const [key, elo] of running) {
+    const [walletId, mode] = key.split(":");
+    await query(`UPDATE player_stats SET elo = $3 WHERE wallet_id = $1 AND mode = $2`, [
+      walletId,
+      mode,
+      elo,
+    ]);
+  }
+  if (running.size > 0) {
+    console.log(`[elo] rebuilt ${running.size} rating${running.size === 1 ? "" : "s"} from match history`);
   }
 }
 

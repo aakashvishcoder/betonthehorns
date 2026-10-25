@@ -8,6 +8,7 @@ import {
   setDisplayName,
   getLeaderboard,
   getProfile,
+  rebuildRatingsFromHistory,
   refundOpenEscrows,
   setShowcase,
 } from "./schema.js";
@@ -18,7 +19,7 @@ import { listenInbox } from "./bus.js";
 import {
   addChat,
   getChat,
-  getMatch,
+  getMatchView,
   hydrateLiveMatches,
   joinQueue,
   leaveQueue,
@@ -311,7 +312,7 @@ app.get("/api/match/active/:walletId", async (req, res) => {
     return;
   }
   const match = await walletMatch(req.params.walletId);
-  if (!match) {
+  if (!match || match.status !== "playing") {
     res.json({ match: null });
     return;
   }
@@ -323,18 +324,13 @@ app.get("/api/match/active/:walletId", async (req, res) => {
 });
 
 app.get("/api/match/:id", async (req, res) => {
-  const match = await getMatch(req.params.id);
-  if (!match) {
+  const walletId = readWallet(req);
+  const view = await getMatchView(req.params.id, isWalletId(walletId) ? walletId : undefined);
+  if (!view) {
     res.status(404).json({ error: "Match not found" });
     return;
   }
-  // Hole cards only for the signed-in player; anyone else gets the public view.
-  const walletId = sessionWallet(req) ?? undefined;
-  res.json({
-    match: publicMatch(match, isWalletId(walletId) ? walletId : undefined),
-    you: isWalletId(walletId) ? privateView(match, walletId) : null,
-    chat: await getChat(match.id),
-  });
+  res.json(view);
 });
 
 app.post("/api/match/:id/action", async (req, res) => {
@@ -435,6 +431,7 @@ async function start() {
   await migrate();
   await hydrateLiveMatches();
   await refundOpenEscrows();
+  await rebuildRatingsFromHistory();
   await listenInbox().catch((error) => {
     console.warn("[ably] inbox", (error as Error).message);
   });
