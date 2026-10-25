@@ -1,5 +1,7 @@
 import {
   claimQueueSeats,
+  clearQueueSeats,
+  closeLiveMatch,
   currentElos,
   dbReady,
   enqueueSeat,
@@ -7,13 +9,16 @@ import {
   findPlayingMatchId,
   insertMatch,
   insertMatchPlayers,
-  listLiveMatches,
+  keepQueueSeats,
+  listLeftoverPlayingIds,
   listQueue,
   loadChat,
-  loadLiveMatchRow,
+  loadMatchView,
   lockEscrow,
   logMatchEvent,
+  playingWalletIds,
   recordChainTxs,
+  refundMatchLocks,
   removeQueuedWallet,
   restoreQueueSeats,
   saveChatLine,
@@ -50,17 +55,6 @@ function queueOf(mode: GameMode) {
   return queues.get(mode)!;
 }
 
-function isLiveMatch(value: unknown): value is MatchState {
-  if (!value || typeof value !== "object") return false;
-  const match = value as MatchState;
-  return (
-    typeof match.id === "string" &&
-    typeof match.seed === "string" &&
-    Array.isArray(match.players) &&
-    (match.status === "playing" || match.status === "finished")
-  );
-}
-
 function rememberMatch(match: MatchState) {
   matches.set(match.id, match);
   for (const player of match.players) {
@@ -68,34 +62,54 @@ function rememberMatch(match: MatchState) {
   }
 }
 
-async function hydrateMatch(id: string) {
-  const cached = matches.get(id);
-  if (cached) return cached;
-  const row = await loadLiveMatchRow(id);
-  if (!isLiveMatch(row)) return undefined;
-  if (!chats.has(id)) chats.set(id, await loadChat(id));
-  rememberMatch(row);
-  return row;
-}
-
 export async function hydrateLiveMatches() {
-  for (const row of await listLiveMatches()) {
-    if (!isLiveMatch(row.live_state)) continue;
-    if (!chats.has(row.id)) chats.set(row.id, await loadChat(row.id));
-    rememberMatch(row.live_state);
+  await clearQueueSeats().catch((error) =>
+    console.warn("[queue] clear", (error as Error).message),
+  );
+  const leftover = await listLeftoverPlayingIds();
+  for (const id of leftover) {
+    await refundMatchLocks(id).catch((error) =>
+      console.warn("[elo] leftover", (error as Error).message),
+    );
+    await closeLiveMatch(id).catch((error) =>
+      console.warn("[db] leftover", (error as Error).message),
+    );
   }
-  if (matches.size > 0) {
-    console.log(`[table] restored ${matches.size} live match${matches.size === 1 ? "" : "es"}`);
+  if (leftover.length > 0) {
+    console.log(`[table] closed ${leftover.length} leftover match${leftover.length === 1 ? "" : "es"}`);
   }
 }
 
 export async function walletMatch(walletId: string) {
-  const id = byWallet.get(walletId) ?? (await findPlayingMatchId(walletId));
-  return id ? hydrateMatch(id) : undefined;
+  const id = byWallet.get(walletId);
+  const match = id ? matches.get(id) : undefined;
+  return match?.status === "playing" ? match : undefined;
 }
 
 export async function getMatch(id: string) {
-  return hydrateMatch(id);
+  return matches.get(id);
+}
+
+export async function getMatchView(id: string, walletId?: string) {
+  const live = matches.get(id);
+  if (live) {
+    return {
+      match: publicMatch(live, walletId),
+      you: walletId ? privateView(live, walletId) : null,
+      chat: await getChat(id),
+    };
+  }
+  const row = await loadMatchView(id);
+  if (!row?.snapshot || typeof row.snapshot !== "object") return null;
+  const snapshot = row.snapshot as ReturnType<typeof publicMatch>;
+  if (row.status === "finished" && row.reveal_seed && !snapshot.revealSeed) {
+    snapshot.revealSeed = row.reveal_seed;
+  }
+  return {
+    match: snapshot,
+    you: null,
+    chat: await loadChat(id),
+  };
 }
 
 function mergeSeats(...lists: QueueSeat[][]) {
@@ -112,9 +126,11 @@ function mergeSeats(...lists: QueueSeat[][]) {
 
 export async function pullGlobalQueue(mode: GameMode) {
   const present = await listQueuePresence(mode);
+  const sitting = dbReady ? await playingWalletIds() : new Set(byWallet.keys());
+  const waiting: QueueSeat[] = [];
   for (const seat of present) {
-    const sitting = await walletMatch(seat.walletId);
-    if (sitting?.status === "playing") continue;
+    if (sitting.has(seat.walletId)) continue;
+    waiting.push(seat);
     if (dbReady) {
       await enqueueSeat(seat.walletId, mode).catch((error) =>
         console.warn("[queue] sync", (error as Error).message),
@@ -123,14 +139,15 @@ export async function pullGlobalQueue(mode: GameMode) {
       queueOf(mode).push(seat);
     }
   }
-  return present;
+  return waiting;
 }
 
 export async function queueSnapshot(mode: GameMode) {
+  const sitting = dbReady ? await playingWalletIds() : new Set(byWallet.keys());
   const waiting = mergeSeats(
     dbReady ? await listQueue(mode) : queueOf(mode),
     await listQueuePresence(mode),
-  );
+  ).filter((seat) => !sitting.has(seat.walletId));
   return {
     mode,
     seats: MODE_SEATS[mode],
@@ -157,14 +174,50 @@ export async function joinQueue(walletId: string, mode: GameMode) {
   }
 }
 
+async function abandonOpenMatch(walletId: string) {
+  const existing = await walletMatch(walletId);
+  if (!existing || existing.status !== "playing") return;
+  for (const player of existing.players) {
+    if (!player.bot) byWallet.delete(player.walletId);
+  }
+  matches.delete(existing.id);
+  chats.delete(existing.id);
+  existing.status = "finished";
+  existing.street = "complete";
+  await refundMatchLocks(existing.id).catch((error) =>
+    console.warn("[elo] abandon", (error as Error).message),
+  );
+  await closeLiveMatch(existing.id).catch((error) =>
+    console.warn("[db] abandon", (error as Error).message),
+  );
+  const publicState = publicMatch(existing);
+  await publish(`table:${existing.id}`, "state", publicState);
+  for (const player of existing.players) {
+    if (player.bot) continue;
+    await publish(`wallet:${player.walletId}`, "state", {
+      matchId: existing.id,
+      match: publicMatch(existing, player.walletId),
+      you: privateView(existing, player.walletId),
+    });
+  }
+}
+
 async function joinQueueOnce(walletId: string, mode: GameMode) {
   const existing = await walletMatch(walletId);
-  if (existing && existing.status === "playing") {
+  if (existing?.status === "playing") {
     return { status: "playing" as const, matchId: existing.id, queue: await queueSnapshot(mode) };
   }
-  if (existing && existing.status === "finished") {
-    byWallet.delete(walletId);
+  const leftover = await findPlayingMatchId(walletId);
+  if (leftover) {
+    await refundMatchLocks(leftover).catch((error) =>
+      console.warn("[elo] leftover", (error as Error).message),
+    );
+    await closeLiveMatch(leftover).catch((error) =>
+      console.warn("[db] leftover", (error as Error).message),
+    );
   }
+  await abandonOpenMatch(walletId);
+  byWallet.delete(walletId);
 
   await ensureWallet(walletId).catch((error) =>
     console.warn("[db] ensure wallet", (error as Error).message),
@@ -177,7 +230,7 @@ async function joinQueueOnce(walletId: string, mode: GameMode) {
     queueOf(mode).push({ walletId, joinedAt: Date.now() });
   }
   await publishQueue(mode);
-  const started = await tryMatch(mode);
+  const started = await tryMatch(mode, [walletId]);
   if (started) {
     return { status: "playing" as const, matchId: started.id, queue: await queueSnapshot(mode) };
   }
@@ -208,12 +261,20 @@ function leaveAllQueues(walletId: string) {
   }
 }
 
-async function tryMatch(mode: GameMode) {
-  await pullGlobalQueue(mode);
+async function tryMatch(mode: GameMode, pinned: string[] = []) {
+  const present = await pullGlobalQueue(mode);
+  const allowed = [...new Set([...present.map((seat) => seat.walletId), ...pinned])];
+  if (dbReady) await keepQueueSeats(mode, allowed);
+  else {
+    queues.set(
+      mode,
+      queueOf(mode).filter((seat) => allowed.includes(seat.walletId)),
+    );
+  }
   const need = MODE_SEATS[mode];
   let walletIds: string[];
   if (dbReady) {
-    const claimed = await claimQueueSeats(mode, need);
+    const claimed = await claimQueueSeats(mode, need, allowed);
     if (!claimed) return null;
     walletIds = claimed;
   } else {
@@ -324,8 +385,8 @@ export async function playAction(
   walletId: string,
   input: ActionInput,
 ) {
-  const match = await hydrateMatch(matchId);
-  if (!match) throw new Error("Match not found");
+  const match = matches.get(matchId);
+  if (!match || match.status !== "playing") throw new Error("Match not found");
   applyAction(match, walletId, input);
   await logMatchEvent(match.id, input.type, walletId, input).catch((error) =>
     console.warn("[db] event", (error as Error).message),
@@ -335,8 +396,8 @@ export async function playAction(
 }
 
 export async function addChat(matchId: string, walletId: string, text: string) {
-  const match = await hydrateMatch(matchId);
-  if (!match) throw new Error("Match not found");
+  const match = matches.get(matchId);
+  if (!match || match.status !== "playing") throw new Error("Match not found");
   if (!match.players.some((player) => player.walletId === walletId)) {
     throw new Error("Not seated");
   }
@@ -367,60 +428,58 @@ export async function getChat(matchId: string) {
   return loaded;
 }
 
+const ticking = new Set<string>();
+
 function tick() {
   for (const match of matches.values()) {
-    if (match.status !== "playing") continue;
+    if (match.status !== "playing" || ticking.has(match.id)) continue;
 
-    if (match.runoutAt && Date.now() >= match.runoutAt) {
-      try {
-        if (stepRunout(match)) void broadcastMatch(match);
-      } catch (error) {
-        console.warn("[engine] runout", error);
+    ticking.add(match.id);
+    try {
+      if (match.runoutAt && Date.now() >= match.runoutAt) {
+        try {
+          if (stepRunout(match)) void broadcastMatch(match);
+        } catch (error) {
+          console.warn("[engine] runout", error);
+        }
+        continue;
       }
-      continue;
-    }
 
-    if (
-      match.street === "showdown" &&
-      match.showdownAt &&
-      Date.now() - match.showdownAt >= SHOWDOWN_MS
-    ) {
-      continueAfterShowdown(match);
-      void broadcastMatch(match);
-      continue;
-    }
-
-    if (
-      match.actionDeadline &&
-      match.actionIndex !== null &&
-      Date.now() >= match.actionDeadline
-    ) {
-      try {
-        timeoutAct(match);
+      if (
+        match.street === "showdown" &&
+        match.showdownAt &&
+        Date.now() - match.showdownAt >= SHOWDOWN_MS
+      ) {
+        continueAfterShowdown(match);
         void broadcastMatch(match);
-      } catch (error) {
-        console.warn("[engine] timeout", error);
+        continue;
       }
+
+      if (
+        match.actionDeadline &&
+        match.actionIndex !== null &&
+        Date.now() >= match.actionDeadline
+      ) {
+        try {
+          timeoutAct(match);
+          void broadcastMatch(match);
+        } catch (error) {
+          console.warn("[engine] timeout", error);
+        }
+      }
+    } finally {
+      ticking.delete(match.id);
     }
   }
 }
 
 setInterval(tick, 250);
 
-async function matchOpenQueues() {
-  for (const mode of MODES) {
-    try {
-      const started = await tryMatch(mode);
-      if (!started) await publishQueue(mode);
-    } catch (error) {
-      console.warn("[queue]", mode, (error as Error).message);
-    }
-  }
-}
-
 setInterval(() => {
-  void matchOpenQueues();
-}, 2000);
+  void Promise.all(MODES.map((mode) => publishQueue(mode))).catch((error) =>
+    console.warn("[queue]", (error as Error).message),
+  );
+}, 5000);
 
 export function listMatches() {
   return [...matches.values()].map((match) => ({

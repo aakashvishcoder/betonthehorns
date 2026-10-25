@@ -3,10 +3,16 @@ import { api, type QueueSnapshot } from "@/lib/api";
 import type { GameModeId } from "@/lib/game-modes";
 
 const INBOX = "inbox";
-const subscribeKey = import.meta.env.VITE_ABLY_SUBSCRIBE_KEY as string | undefined;
 
 let client: Ably.Realtime | null = null;
 let boundWallet: string | null = null;
+
+function asTokenRequest(value: unknown): Ably.TokenRequest | null {
+  if (!value || typeof value !== "object") return null;
+  const token = value as Ably.TokenRequest;
+  if (!token.keyName || !token.mac || !token.nonce) return null;
+  return token;
+}
 
 export function getRealtime(walletId: string) {
   if (client && boundWallet === walletId) return client;
@@ -20,14 +26,15 @@ export function getRealtime(walletId: string) {
     authCallback: (_params, callback) => {
       void api
         .ablyToken(walletId)
-        .then((token) => callback(null, token as Ably.TokenRequest))
-        .catch((error: Error) => {
-          if (subscribeKey) {
-            callback(null, subscribeKey);
+        .then((token) => {
+          const request = asTokenRequest(token);
+          if (!request) {
+            callback("Ably token was missing from the API", null);
             return;
           }
-          callback(error.message, null);
-        });
+          callback(null, request);
+        })
+        .catch((error: Error) => callback(error.message, null));
     },
   });
   return client;
@@ -48,17 +55,17 @@ export function watchConnection(
   };
 }
 
+function channelOf(walletId: string, name: string) {
+  return getRealtime(walletId).channels.get(name);
+}
+
 export function subscribeChannel(
   walletId: string,
   name: string,
   event: string,
   onMessage: (data: unknown) => void,
-  rewind = 0,
 ) {
-  const channel = getRealtime(walletId).channels.get(
-    name,
-    rewind > 0 ? { params: { rewind: String(rewind) } } : {},
-  );
+  const channel = channelOf(walletId, name);
   const listener = (message: Ably.Message) => {
     onMessage(message.data);
   };
@@ -79,7 +86,7 @@ export async function sendInbox(
 }
 
 export function enterQueuePresence(walletId: string, mode: GameModeId) {
-  const channel = getRealtime(walletId).channels.get(`queue:${mode}`);
+  const channel = channelOf(walletId, `queue:${mode}`);
   void channel.presence.enter({ walletId, mode }).catch((error: Error) => {
     console.warn("[ably] presence", error.message);
   });
@@ -94,7 +101,7 @@ export function watchGlobalQueue(
   seats: number,
   onQueue: (queue: QueueSnapshot) => void,
 ) {
-  const channel = getRealtime(walletId).channels.get(`queue:${mode}`);
+  const channel = channelOf(walletId, `queue:${mode}`);
   const fromPresence = () => {
     void channel.presence.get().then((members) => {
       const wallets = [
@@ -109,17 +116,14 @@ export function watchGlobalQueue(
   };
   channel.presence.subscribe(fromPresence);
   fromPresence();
-  const stopSnap = subscribeChannel(
-    walletId,
-    `queue:${mode}`,
-    "waiting",
-    (data) => {
-      onQueue(data as QueueSnapshot);
-    },
-    1,
-  );
+  const listener = (message: Ably.Message) => {
+    onQueue(message.data as QueueSnapshot);
+  };
+  void channel.subscribe("waiting", listener).catch((error: Error) => {
+    console.warn("[ably] subscribe", `queue:${mode}`, error.message);
+  });
   return () => {
     channel.presence.unsubscribe(fromPresence);
-    stopSnap();
+    channel.unsubscribe("waiting", listener);
   };
 }

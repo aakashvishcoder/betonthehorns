@@ -1,12 +1,22 @@
 import { revealMatch } from "./chain.js";
 import { settleRatings, STARTING_ELO } from "./elo.js";
-import { applySettlement, currentElos, escrowLocks, recordChainTxs } from "./schema.js";
+import {
+  applySettlement,
+  currentElos,
+  escrowLocks,
+  matchAlreadySettled,
+  recordChainTxs,
+} from "./schema.js";
 import type { MatchState } from "./types.js";
 
 const settled = new Set<string>();
 
 export async function settleMatch(match: MatchState) {
   if (match.status !== "finished" || settled.has(match.id)) return;
+  if (await matchAlreadySettled(match.id)) {
+    settled.add(match.id);
+    return;
+  }
   settled.add(match.id);
 
   const humans = match.players.filter((player) => !player.bot);
@@ -38,10 +48,12 @@ export async function settleMatch(match: MatchState) {
   const results = settleRatings(
     humans.map((player) => {
       const current = elos.get(player.walletId) ?? STARTING_ELO;
-      const stake = locks.get(player.walletId) ?? 0;
+      const lock = locks.get(player.walletId);
+      const stake = lock?.stake ?? 0;
+      const before = lock?.preElo ?? (lock ? current + stake : current);
       return {
         walletId: player.walletId,
-        elo: locks.has(player.walletId) ? current + stake : current,
+        elo: before,
         place: placeOf.get(player.walletId) ?? humans.length,
         stake,
       };

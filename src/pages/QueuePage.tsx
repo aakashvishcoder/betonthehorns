@@ -52,16 +52,6 @@ export default function QueuePage() {
       })
       .catch(() => undefined);
 
-    const lookForTable = () => {
-      void api
-        .activeMatch(address)
-        .then((active) => {
-          if (cancelled || !active.match || active.match.status !== "playing") return;
-          goTable(active.match.id);
-        })
-        .catch(() => undefined);
-    };
-
     void sendInbox(address, "join", { mode: modeId }).catch(() => undefined);
     const leavePresence = enterQueuePresence(address, modeId);
 
@@ -70,8 +60,7 @@ export default function QueuePage() {
       .then((result) => {
         if (cancelled) return;
         setQueue(result.queue);
-        if (result.matchId) goTable(result.matchId);
-        else lookForTable();
+        if (result.status === "playing" && result.matchId) goTable(result.matchId);
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message);
@@ -81,13 +70,10 @@ export default function QueuePage() {
       if (!cancelled) setQueue(data);
     });
     const stopWallet = subscribeChannel(address, `wallet:${address}`, "matched", (data) => {
-      const payload = data as { matchId?: string };
-      if (payload.matchId) goTable(payload.matchId);
-    });
-    const stopState = subscribeChannel(address, `wallet:${address}`, "state", (data) => {
-      const payload = data as { matchId?: string; match?: { status?: string } };
+      const payload = data as { matchId?: string; match?: { status?: string; id?: string } };
       if (payload.match?.status === "finished") return;
-      if (payload.matchId) goTable(payload.matchId);
+      const id = payload.matchId ?? payload.match?.id;
+      if (id) goTable(id);
     });
     const stopConnection = watchConnection(address, (state, reason) => {
       if (cancelled) return;
@@ -95,14 +81,11 @@ export default function QueuePage() {
         setError(reason || "Live updates did not connect. Still checking for a table.");
       }
     });
-    const poll = window.setInterval(lookForTable, 2000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(poll);
       stopQueue();
       stopWallet();
-      stopState();
       stopConnection();
       leavePresence();
       window.setTimeout(() => {
