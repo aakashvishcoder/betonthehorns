@@ -1,4 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 
 /**
  * SerpApi (Google results as JSON) with a small, disk-backed cache and daily budget, because the
@@ -14,12 +16,21 @@ export const SERPAPI = {
   newsRefreshMs: 12 * 60 * 60_000,
 };
 
-/** Tiny JSON file store under server/.cache (git-ignored). */
+/** On Vercel the code folder is read-only; only /tmp is writable (and per instance). */
+const defaultDir = process.env.VERCEL
+  ? pathToFileURL(`${tmpdir()}/horns-cache/`)
+  : new URL("../.cache/", import.meta.url);
+
+/** Tiny JSON file store under server/.cache (git-ignored), or /tmp on Vercel. */
 export class DiskCache<T> {
   private readonly file: URL;
-  constructor(name: string, dir = new URL("../.cache/", import.meta.url)) {
+  constructor(name: string, dir = defaultDir) {
     this.file = new URL(`${name}.json`, dir);
-    mkdirSync(dir, { recursive: true });
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      // Cache is best-effort: without a writable folder, reads miss and writes are dropped.
+    }
   }
   read(): T | null {
     try {
