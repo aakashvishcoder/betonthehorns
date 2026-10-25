@@ -180,12 +180,19 @@ async function tryHypertable(table: "elo_history" | "match_events") {
   }
 }
 
+/**
+ * A queue seat only counts while its queue page keeps checking in (it re-joins every 20s), so
+ * someone who closed the tab is never matched into a game they can't see.
+ */
+const QUEUE_FRESH = "INTERVAL '60 seconds'";
+
 export async function enqueueSeat(walletId: string, mode: GameMode) {
   await query(
-    `INSERT INTO queue_seats (wallet_id, mode, joined_at)
-     VALUES ($1, $2, NOW())
+    `INSERT INTO queue_seats (wallet_id, mode, joined_at, seen_at)
+     VALUES ($1, $2, NOW(), NOW())
      ON CONFLICT (wallet_id) DO UPDATE
      SET mode = EXCLUDED.mode,
+         seen_at = NOW(),
          joined_at = CASE
            WHEN queue_seats.mode = EXCLUDED.mode THEN queue_seats.joined_at
            ELSE NOW()
@@ -196,7 +203,7 @@ export async function enqueueSeat(walletId: string, mode: GameMode) {
 
 export async function listQueue(mode: GameMode) {
   const result = await query<{ wallet_id: string; joined_at: Date }>(
-    `SELECT wallet_id, joined_at FROM queue_seats WHERE mode = $1 ORDER BY joined_at`,
+    `SELECT wallet_id, joined_at FROM queue_seats WHERE mode = $1 AND seen_at > NOW() - ${QUEUE_FRESH} ORDER BY joined_at`,
     [mode],
   );
   return result.rows.map((row) => ({
@@ -245,7 +252,7 @@ export async function claimQueueSeats(mode: GameMode, need: number, allowed?: st
     await client.query("BEGIN");
     const listed = await client.query<{ wallet_id: string }>(
       `SELECT wallet_id FROM queue_seats
-       WHERE mode = $1
+       WHERE mode = $1 AND seen_at > NOW() - ${QUEUE_FRESH}
        ORDER BY joined_at
        FOR UPDATE`,
       [mode],
@@ -275,7 +282,7 @@ export async function restoreQueueSeats(mode: GameMode, walletIds: string[]) {
       `INSERT INTO queue_seats (wallet_id, mode, joined_at)
        VALUES ($1, $2, TO_TIMESTAMP($3))
        ON CONFLICT (wallet_id) DO UPDATE
-       SET mode = EXCLUDED.mode, joined_at = EXCLUDED.joined_at`,
+       SET mode = EXCLUDED.mode, joined_at = EXCLUDED.joined_at, seen_at = NOW()`,
       [walletId, mode, index / 1000],
     );
   }

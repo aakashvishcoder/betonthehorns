@@ -83,13 +83,7 @@ export async function listenInbox() {
 
   for (const mode of MODES) {
     const channel = realtime.channels.get(`queue:${mode}`);
-    channel.presence.subscribe("enter", (member) => {
-      const walletId = member.clientId;
-      if (!isWallet(walletId)) return;
-      void joinQueue(walletId, mode).catch((error) =>
-        console.warn("[ably] presence join", (error as Error).message),
-      );
-    });
+    // Presence never queues anyone (only pressing queue does); leaving it does drop your seat.
     channel.presence.subscribe("leave", (member) => {
       const walletId = member.clientId;
       if (!isWallet(walletId)) return;

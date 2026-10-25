@@ -18,6 +18,7 @@ export async function migrateSeats() {
     );
     CREATE INDEX IF NOT EXISTS wallet_games_match ON wallet_games (match_id);
     ALTER TABLE matches ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMPTZ;
+    ALTER TABLE queue_seats ADD COLUMN IF NOT EXISTS seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     DELETE FROM wallet_games w
     WHERE NOT EXISTS (SELECT 1 FROM matches m WHERE m.id = w.match_id AND m.status = 'playing')
       AND w.created_at < NOW() - INTERVAL '2 minutes';

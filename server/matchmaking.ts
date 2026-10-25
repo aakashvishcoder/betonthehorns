@@ -279,24 +279,6 @@ function mergeSeats(...lists: QueueSeat[][]) {
     .sort((left, right) => left.joinedAt - right.joinedAt);
 }
 
-export async function pullGlobalQueue(mode: GameMode) {
-  const present = await listQueuePresence(mode);
-  const sitting = dbReady ? await playingWalletIds() : new Set(byWallet.keys());
-  const waiting: QueueSeat[] = [];
-  for (const seat of present) {
-    if (sitting.has(seat.walletId)) continue;
-    waiting.push(seat);
-    if (dbReady) {
-      await enqueueSeat(seat.walletId, mode).catch((error) =>
-        console.warn("[queue] sync", (error as Error).message),
-      );
-    } else if (!queueOf(mode).some((row) => row.walletId === seat.walletId)) {
-      queueOf(mode).push(seat);
-    }
-  }
-  return waiting;
-}
-
 export async function queueSnapshot(mode: GameMode) {
   const sitting = dbReady ? await playingWalletIds() : new Set(byWallet.keys());
   const waiting = mergeSeats(
@@ -412,7 +394,9 @@ function leaveAllQueues(walletId: string) {
 }
 
 async function tryMatch(mode: GameMode, pinned: string[] = []) {
-  await pullGlobalQueue(mode);
+  // Only people who pressed queue (and whose queue page is still checking in) are matched.
+  // Seats used to be pulled in from Ably presence too, which re-matched two players the moment
+  // their game ended if a presence entry lingered ("the match restarts").
   if (pinned.length && dbReady) {
     for (const walletId of pinned) {
       await enqueueSeat(walletId, mode).catch(() => undefined);
