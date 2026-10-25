@@ -12,14 +12,13 @@ import {
   ArrowLeft,
   ArrowUpRight,
   LayoutGrid,
-  Pause,
-  Play,
   Trophy,
   UserRound,
   ShieldCheck,
 } from "lucide-react";
 import { useReducedMotion } from "framer-motion";
 import { Brand } from "@/components/poker/PokerVisuals";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { demoPlayerFromAddress } from "@/lib/poker-design";
 import "@/styles/poker-app.css";
@@ -60,10 +59,10 @@ export default function PokerAppShell({
   children: ReactNode;
 }) {
   const [location, navigate] = useLocation();
-  const { paused, effectsPaused, reducedMotion, toggleEffects } =
-    usePokerMotion();
+  const { paused } = usePokerMotion();
   const { isAuthenticated, address, displayAddress, connect, status } =
     useAuth();
+  const [tableName, setTableName] = useState<string | null>(null);
   const profileHref = address ? `/profile/${address}` : "/leaderboard";
   const navigation = [
     { id: "play", label: "Play", href: "/play", icon: LayoutGrid },
@@ -83,6 +82,25 @@ export default function PokerAppShell({
     window.scrollTo({ top: 0, behavior: "instant" });
     document.title = `${label} — betonthehorns`;
   }, [location, label]);
+
+  useEffect(() => {
+    if (!address) {
+      setTableName(null);
+      return;
+    }
+    const load = () => {
+      void api
+        .wallet(address)
+        .then((record) => setTableName(record.displayName))
+        .catch(() => undefined);
+    };
+    load();
+    const onName = (event: Event) => {
+      setTableName((event as CustomEvent<string | null>).detail);
+    };
+    window.addEventListener("horns-name", onName);
+    return () => window.removeEventListener("horns-name", onName);
+  }, [address]);
 
   return (
     <div
@@ -156,27 +174,16 @@ export default function PokerAppShell({
                 {status === "connecting" ? "Connecting…" : "Connect wallet"}
               </button>
             )}
-            <button
-              className="club-icon-button"
-              onClick={toggleEffects}
-              aria-label={
-                reducedMotion
-                  ? "Motion follows your reduced-motion preference"
-                  : effectsPaused
-                    ? "Resume visual effects"
-                    : "Pause visual effects"
-              }
-              aria-pressed={paused}
-              disabled={reducedMotion}
-            >
-              {paused ? <Play size={15} /> : <Pause size={15} />}
-            </button>
             <Link
               className="club-account"
               href={profileHref}
-              aria-label="Open profile"
+              aria-label={tableName ? `${tableName}, open profile` : "Open profile"}
             >
-              {displayAddress ? displayAddress.slice(0, 2) : "?"}
+              {tableName
+                ? tableName.slice(0, 2).toUpperCase()
+                : displayAddress
+                  ? displayAddress.slice(0, 2)
+                  : "?"}
             </Link>
           </div>
         </header>

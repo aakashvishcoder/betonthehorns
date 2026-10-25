@@ -73,7 +73,11 @@ export function PlayingCard({
       aria-label={faceDown ? "Face-down card" : `${rankName} of ${suitName}`}
     >
       {faceDown ? (
-        <span className="card-back-mark">♠</span>
+        <img
+          className="card-back-art"
+          src="/cards/horns-card-back.webp"
+          alt=""
+        />
       ) : (
         <>
           <span className="card-corner">

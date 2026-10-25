@@ -1,0 +1,134 @@
+import type { GameModeId } from "@/lib/game-modes";
+
+const base = import.meta.env.VITE_API_URL ?? "";
+
+export type PublicPlayer = {
+  walletId: string;
+  seat: number;
+  stack: number;
+  bet: number;
+  folded: boolean;
+  allIn: boolean;
+  busted: boolean;
+  bot: boolean;
+  lastAction: string | null;
+  name: string;
+  hole: string[] | null;
+};
+
+export type PublicMatch = {
+  id: string;
+  mode: GameModeId;
+  status: "playing" | "finished";
+  street: string;
+  board: string[];
+  pot: number;
+  currentBet: number;
+  minRaise: number;
+  blinds: { sb: number; bb: number };
+  handNumber: number;
+  dealerIndex: number;
+  actionIndex: number | null;
+  actionDeadline: number | null;
+  winners: { walletId: string; amount: number; hand?: string }[];
+  log: string[];
+  players: PublicPlayer[];
+};
+
+export type LegalActions = {
+  canAct: boolean;
+  toCall: number;
+  canCheck: boolean;
+  canFold: boolean;
+  canCall: boolean;
+  minRaiseTo: number;
+  maxRaiseTo: number;
+};
+
+export type PrivateView = {
+  hole: string[] | null;
+  handName: string | null;
+  legal: LegalActions;
+};
+
+export type ChatMessage = { name: string; text: string; at: number };
+
+export type QueueSnapshot = {
+  mode: GameModeId;
+  seats: number;
+  count: number;
+  wallets: string[];
+};
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${base}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) {
+    throw new Error(data.error || response.statusText);
+  }
+  return data;
+}
+
+export const api = {
+  health: () => request<{ ok: boolean; db: boolean }>("/api/health"),
+  wallet: (walletId: string) =>
+    request<{
+      walletId: string;
+      displayName: string | null;
+      eloHistory: Record<GameModeId, { time: string; elo: number; matchId: string | null }[]>;
+    }>(`/api/wallet/${walletId}`),
+  setDisplayName: (walletId: string, displayName: string) =>
+    request<{ walletId: string; displayName: string | null }>("/api/profile/name", {
+      method: "POST",
+      body: JSON.stringify({ walletId, displayName }),
+    }),
+  ablyToken: (walletId: string) =>
+    request<unknown>("/api/ably/token", {
+      method: "POST",
+      body: JSON.stringify({ walletId }),
+    }),
+  queue: (mode: GameModeId) => request<QueueSnapshot>(`/api/queue/${mode}`),
+  joinQueue: (walletId: string, mode: GameModeId) =>
+    request<{
+      status: "queued" | "playing";
+      matchId: string | null;
+      queue: QueueSnapshot;
+    }>("/api/queue", {
+      method: "POST",
+      body: JSON.stringify({ walletId, mode }),
+    }),
+  leaveQueue: (walletId: string) =>
+    request<{ ok: boolean }>("/api/queue", {
+      method: "DELETE",
+      body: JSON.stringify({ walletId }),
+    }),
+  match: (id: string, walletId: string) =>
+    request<{ match: PublicMatch; you: PrivateView | null; chat: ChatMessage[] }>(
+      `/api/match/${id}?walletId=${encodeURIComponent(walletId)}`,
+    ),
+  activeMatch: (walletId: string) =>
+    request<{ match: PublicMatch | null; you?: PrivateView; chat?: ChatMessage[] }>(
+      `/api/match/active/${walletId}`,
+    ),
+  action: (
+    matchId: string,
+    walletId: string,
+    type: "fold" | "check" | "call" | "raise",
+    raiseTo?: number,
+  ) =>
+    request<{ match: PublicMatch; you: PrivateView }>(`/api/match/${matchId}/action`, {
+      method: "POST",
+      body: JSON.stringify({ walletId, type, raiseTo }),
+    }),
+  chat: (matchId: string, walletId: string, text: string) =>
+    request<{ messages: ChatMessage[] }>(`/api/match/${matchId}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ walletId, text }),
+    }),
+};

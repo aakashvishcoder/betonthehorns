@@ -68,7 +68,7 @@ export default function App() {
                       )
                     }
                   </Route>
-                  <Route path="/table">
+                  <Route path="/table/:matchId">
                     <Protected>
                       <TablePage />
                     </Protected>

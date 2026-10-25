@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowUpRight, Trophy } from "lucide-react";
 import { Link, Redirect, useRoute } from "wouter";
 import PokerAppShell from "@/components/poker-app/PokerAppShell";
@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { gameModes, type GameModeId } from "@/lib/game-modes";
 import {
@@ -32,8 +33,29 @@ export default function ProfilePage() {
   const [, params] = useRoute<{ address: string }>("/profile/:address");
   const { isAuthenticated, address: myAddress } = useAuth();
   const [selectedGame, setSelectedGame] = useState<SampleGame | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
   const lookedUp = params?.address ?? myAddress ?? "demo";
   const player = demoPlayerFromAddress(lookedUp);
+  const shownName = displayName || player.name;
+
+  useEffect(() => {
+    if (!lookedUp || lookedUp === "demo") return;
+    let cancelled = false;
+    void api
+      .wallet(lookedUp)
+      .then((record) => {
+        if (cancelled) return;
+        setDisplayName(record.displayName);
+        setDraftName(record.displayName ?? "");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [lookedUp]);
   const mine = myAddress === player.address;
   const milestones = useMemo(() => playerMilestones(player), [player]);
   const totals = useMemo(() => {
@@ -51,6 +73,23 @@ export default function ProfilePage() {
     );
   }, [player]);
 
+  async function saveName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!myAddress) return;
+    setSavingName(true);
+    setNameError(null);
+    try {
+      const saved = await api.setDisplayName(myAddress, draftName);
+      setDisplayName(saved.displayName);
+      setDraftName(saved.displayName ?? "");
+      window.dispatchEvent(new CustomEvent("horns-name", { detail: saved.displayName }));
+    } catch (error) {
+      setNameError((error as Error).message);
+    } finally {
+      setSavingName(false);
+    }
+  }
+
   if (!params?.address) {
     if (isAuthenticated && myAddress) {
       return <Redirect to={`/profile/${myAddress}`} />;
@@ -63,7 +102,7 @@ export default function ProfilePage() {
       <div className="profile-page">
         <PageHeading
           eyebrow={mine ? "YOUR WALLET · DEMO" : "PUBLIC PROFILE · DEMO"}
-          title={player.name}
+          title={shownName}
           description={`${shortAddress(player.address)} · Separate ELO, rank dNFTs, and milestones for Hands Up, SNG 4, and SNG 6.`}
           action={
             <Link href="/play" className="club-button">
@@ -81,10 +120,10 @@ export default function ProfilePage() {
               </Pill>
             </div>
             <div className="profile-identity">
-              <Avatar name={player.name} size={62} className="profile-avatar" />
+              <Avatar name={shownName} size={62} className="profile-avatar" />
               <div>
                 <div className="profile-name-line">
-                  <h2>{player.name}</h2>
+                  <h2>{shownName}</h2>
                   <Pill tone="maroon">@{player.handle}</Pill>
                 </div>
                 <p className="profile-handle">{player.address}</p>
@@ -92,6 +131,25 @@ export default function ProfilePage() {
                   Ranked Hold’em on Solana. ELO is escrowed per game. Rank
                   dNFTs mint when this wallet crosses a new tier.
                 </p>
+                {mine && (
+                  <form className="profile-name-form" onSubmit={(event) => void saveName(event)}>
+                    <label htmlFor="display-name">DISPLAY NAME</label>
+                    <div>
+                      <input
+                        id="display-name"
+                        value={draftName}
+                        maxLength={18}
+                        placeholder="Name at the table"
+                        onChange={(event) => setDraftName(event.target.value)}
+                      />
+                      <button className="club-button" type="submit" disabled={savingName}>
+                        {savingName ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                    <p>This name shows on your seat and in table chat. Leave it blank to use your wallet.</p>
+                    {nameError && <p className="profile-name-error">{nameError}</p>}
+                  </form>
+                )}
               </div>
             </div>
           </Panel>
