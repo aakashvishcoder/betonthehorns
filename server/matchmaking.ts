@@ -19,10 +19,19 @@ import {
   stepRunout,
   timeoutAct,
 } from "./engine.js";
-import { randomBytes } from "node:crypto";
 import { publish } from "./ably.js";
 import { settleMatch } from "./settle.js";
 import { lockMatch } from "./chain.js";
+import {
+  driveAi,
+  finishTracking,
+  practiceSeats,
+  refundPracticeGame,
+  registerPractice,
+  syncHands,
+  takePracticeGame,
+  trackAction,
+} from "./practice.js";
 import { seatLabel } from "./names.js";
 import { MODE_SEATS, MODES, type ActionInput, type GameMode, type MatchState } from "./types.js";
 
@@ -107,11 +116,10 @@ async function tryMatch(mode: GameMode) {
 
   const taken = waiting.splice(0, need);
   queues.set(mode, waiting);
-  const wallets = taken.map((seat) => seat.walletId);
-  // Provably fair: commit sha256(seed) on Solana before a single card is dealt.
-  const seed = randomBytes(32).toString("hex");
-  const chainMatchId = await commitRankedMatch(mode, wallets, seed);
-  const match = createMatch(mode, wallets, [], { seed, ranked: true, chainMatchId });
+  const match = createMatch(
+    mode,
+    taken.map((seat) => seat.walletId),
+  );
   matches.set(match.id, match);
   chats.set(match.id, []);
   for (const player of match.players) {
@@ -188,14 +196,14 @@ export async function startPractice(walletId: string, mode: GameMode) {
   }
   try {
     leaveAllQueues(walletId);
-    const elo = (await ratingFor(walletId, mode)) ?? 1200;
+    const elo = (await currentElos([walletId], mode).catch(() => new Map<string, number>())).get(walletId) ?? STARTING_ELO;
     const { ids, players } = await practiceSeats(walletId, mode, MODE_SEATS[mode], elo);
     const match = createMatch(mode, [walletId], ids, { ranked: false });
     matches.set(match.id, match);
     chats.set(match.id, []);
     byWallet.set(walletId, match.id);
     registerPractice(match, players);
-    await insertMatch(match.id, match.mode, publicMatch(match)).catch((error) =>
+    await insertMatch(match.id, match.mode, publicMatch(match), match.commitHash).catch((error) =>
       console.warn("[db] persist practice", (error as Error).message),
     );
     await broadcastMatch(match, "matched");
@@ -210,21 +218,15 @@ async function publishQueue(mode: GameMode) {
   await publish(`queue:${mode}`, "waiting", queueSnapshot(mode));
 }
 
-const finalized = new Set<string>();
-
-/** Once a match ends: save style data; if ranked, settle on-chain and push the Elo changes. */
-async function finalizeOnce(match: MatchState) {
-  if (match.status !== "finished" || finalized.has(match.id)) return;
-  finalized.add(match.id);
-  await finishTracking(match);
-  if (!match.ranked) return;
-  match.elo = await settleRankedMatch(match);
-  if (match.elo) await broadcastMatch(match, "elo");
-}
+const tracked = new Set<string>();
 
 export async function broadcastMatch(match: MatchState, name = "state") {
   syncHands(match);
-  void finalizeOnce(match);
+  // Save play-style data once per match; settleMatch skips practice (only one human).
+  if (match.status === "finished" && !tracked.has(match.id)) {
+    tracked.add(match.id);
+    void finishTracking(match);
+  }
   const publicState = publicMatch(match);
   await publish(`table:${match.id}`, name, publicState);
   for (const player of match.players) {

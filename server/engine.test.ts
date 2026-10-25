@@ -9,10 +9,9 @@ import {
   publicMatch,
   stepRunout,
 } from "./engine.js";
-import { cardCode, seededDeck } from "./poker.js";
+import { createHash } from "node:crypto";
+import { cardCode } from "./poker.js";
 import { MODE_SEATS, MODES, type MatchState } from "./types.js";
-
-const SEED = "ab".repeat(32);
 
 /** Plays the match to the end with random legal moves, fast-forwarding run-outs and showdowns. */
 function playOut(match: MatchState, random: () => number) {
@@ -46,22 +45,11 @@ function rng(seed: number) {
   return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
 }
 
-test("seeded deck: same seed and hand give the same 52 distinct cards", () => {
-  const a = seededDeck(Buffer.from(SEED, "hex"), 3).map(cardCode);
-  assert.deepEqual(seededDeck(Buffer.from(SEED, "hex"), 3).map(cardCode), a);
-  assert.equal(new Set(a).size, 52);
-  assert.notDeepEqual(seededDeck(Buffer.from(SEED, "hex"), 4).map(cardCode), a);
-});
-
-test("a match deals hole cards from the committed seed", () => {
-  const match = createMatch("hands-up", ["w1", "w2"], [], { seed: SEED });
-  const deck = seededDeck(Buffer.from(SEED, "hex"), 1);
-  const expectSeat0 = [deck.at(-1), deck.at(-2)].map((c) => cardCode(c!));
-  assert.deepEqual(match.players[0]!.hole!.map(cardCode), expectSeat0);
+test("the seed stays secret until the match ends and matches its public commitment", () => {
+  const match = createMatch("hands-up", ["w1", "w2"]);
   const view = publicMatch(match);
-  assert.equal(view.seed, null, "seed stays secret while playing");
-  assert.match(view.commitment, /^[0-9a-f]{64}$/);
-  assert.equal(JSON.stringify(view).includes('"deck"'), false, "deck never sent to clients");
+  assert.equal(view.revealSeed, null, "seed stays secret while playing");
+  assert.equal(view.commitHash, createHash("sha256").update(Buffer.from(match.seed, "hex")).digest("hex"));
 });
 
 test("random full games: unique cards, chips conserved, valid places, seed revealed", () => {
@@ -69,19 +57,19 @@ test("random full games: unique cards, chips conserved, valid places, seed revea
     for (let run = 0; run < 25; run++) {
       const n = MODE_SEATS[mode];
       const wallets = Array.from({ length: n }, (_, i) => `w${i}`);
-      const match = createMatch(mode, wallets, [], { seed: (run * 7 + n).toString(16).padStart(64, "0") });
+      const match = createMatch(mode, wallets);
       const total = playOut(match, rng(run + n));
       assert.equal(match.players.reduce((s, p) => s + p.stack, 0), total);
       const places = wallets.map((w) => match.places[w]);
       assert.ok(places.every((p) => p !== undefined && p >= 1 && p <= n), `places ${places}`);
       assert.equal(places.filter((p) => p === 1).length, 1);
-      assert.equal(publicMatch(match).seed, match.seed);
+      assert.equal(publicMatch(match).revealSeed, match.seed);
     }
   }
 });
 
 test("cards dealt within a hand are all different", () => {
-  const match = createMatch("sng-6", ["a", "b", "c", "d", "e", "f"], [], { seed: SEED });
+  const match = createMatch("sng-6", ["a", "b", "c", "d", "e", "f"]);
   const random = rng(9);
   for (let hand = 0; hand < 30 && match.status === "playing"; hand++) {
     const startHand = match.handNumber;

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { seatLabel } from "./names.js";
 import { cardCode, compareHands, evaluate, makeDeck } from "./poker.js";
 import { newCommit, seededShuffle } from "./rng.js";
@@ -95,8 +95,9 @@ export function startHand(match: MatchState) {
   }
 
   const deck = freshDeck(match);
+  match.handStartStacks = Object.fromEntries(match.players.map((p) => [p.walletId, p.stack]));
   for (const player of alive) {
-    player.hole = [match.deck.pop()!, match.deck.pop()!];
+    player.hole = [deck.pop()!, deck.pop()!];
   }
 
   match.street = "preflop";
@@ -138,7 +139,7 @@ export function createMatch(
   mode: GameMode,
   walletIds: string[],
   botIds: string[] = [],
-  options: { seed?: string; ranked?: boolean; chainMatchId?: string | null } = {},
+  options: { ranked?: boolean } = {},
 ): MatchState {
   const seats = MODE_SEATS[mode];
   const all = [...walletIds, ...botIds];
@@ -183,6 +184,9 @@ export function createMatch(
     exposed: false,
     log: [],
     chain: [],
+    ranked: options.ranked ?? true,
+    places: {},
+    handStartStacks: {},
     ...(() => {
       const commit = newCommit();
       return { commitHash: commit.commitHash, seed: commit.seed, rngCounter: 0 };
@@ -580,6 +584,8 @@ export function publicMatch(match: MatchState, viewer?: string) {
     commitHash: match.commitHash,
     revealSeed: match.status === "finished" ? match.seed : null,
     chain: match.chain ?? [],
+    ranked: match.ranked,
+    places: match.places,
     players: match.players.map((player) => {
       const mine = player.walletId === viewer;
       const show = Boolean(

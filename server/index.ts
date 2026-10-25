@@ -28,7 +28,9 @@ import {
 } from "./matchmaking.js";
 import { privateView, publicMatch } from "./engine.js";
 import { issueChallenge, login, logout, requireWallet, sessionWallet } from "./session.js";
-import { solanaReady } from "./chain.js";
+import { dailyPuzzles, publicPuzzle, today, type Choice } from "./puzzles.js";
+import { attemptsFor, leaderboard, migratePuzzles, saveAttempt, streakFor } from "./puzzle-store.js";
+import { seatLabel } from "./names.js";
 import { coachHandler } from "./src/coach.ts";
 import { NewsFeed, newsHandler } from "./src/news.ts";
 import { CoachSearch } from "./src/serpapi.ts";
@@ -228,10 +230,11 @@ app.get("/api/profile/:walletId", async (req, res) => {
 
 app.post("/api/profile/showcase", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const shown = (req.body as { shown?: unknown }).shown;
-    if (!isWalletId(walletId) || !Array.isArray(shown) || shown.some((key) => typeof key !== "string")) {
-      res.status(400).json({ error: "walletId and shown keys required" });
+    if (!Array.isArray(shown) || shown.some((key) => typeof key !== "string")) {
+      res.status(400).json({ error: "shown keys required" });
       return;
     }
     if (!dbReady) {
@@ -378,9 +381,77 @@ app.post("/api/match/:id/chat", async (req, res) => {
   }
 });
 
+// Daily puzzles: same five for everyone each UTC day. Answers never leave the server until you
+// commit to a choice; signed-in players get one try per puzzle, a streak and the leaderboard.
+app.get("/api/puzzles/today", async (req, res) => {
+  try {
+    const day = today();
+    const puzzles = dailyPuzzles(day);
+    const walletId = sessionWallet(req);
+    const attempts = walletId ? await attemptsFor(walletId, day) : [];
+    res.json({
+      day,
+      puzzles: puzzles.map(publicPuzzle),
+      attempts: attempts.map((a) => ({ ...a, solution: puzzles[a.index - 1]!.solution })),
+      streak: walletId ? await streakFor(walletId, day) : 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/puzzles/answer", async (req, res) => {
+  try {
+    const { day, index, choice } = req.body as { day?: string; index?: number; choice?: string };
+    if (day !== today()) {
+      res.status(410).json({ error: "That puzzle set has ended. Reload for today's puzzles." });
+      return;
+    }
+    const puzzle = dailyPuzzles(day)[Number(index) - 1];
+    if (!puzzle || !puzzle.options.some((o) => o.id === choice)) {
+      res.status(400).json({ error: "Unknown puzzle or choice" });
+      return;
+    }
+    const correct = choice === puzzle.solution.answer;
+    const walletId = sessionWallet(req);
+    if (walletId) {
+      const saved = await saveAttempt(walletId, day, { index: puzzle.index, choice: choice as Choice, correct });
+      if (!saved) {
+        const previous = (await attemptsFor(walletId, day)).find((a) => a.index === puzzle.index)!;
+        res.status(409).json({ error: "You've already answered this one.", ...previous, solution: puzzle.solution });
+        return;
+      }
+    }
+    res.json({
+      index: puzzle.index,
+      choice,
+      correct,
+      solution: puzzle.solution,
+      saved: Boolean(walletId),
+      streak: walletId ? await streakFor(walletId, day) : 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.get("/api/puzzles/leaderboard", async (_req, res) => {
+  try {
+    const day = today();
+    const rows = await leaderboard(day);
+    res.json({ day, rows: rows.map((r) => ({ ...r, name: seatLabel(r.walletId) })) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 async function start() {
   await migrate();
   await refundOpenEscrows();
+  if (dbReady) await migratePuzzles().catch((error) => console.warn("[db] puzzles", (error as Error).message));
+  // Build today's puzzles up front (and again after midnight) so no visitor waits for them.
+  setTimeout(() => dailyPuzzles(today()), 0);
+  setInterval(() => dailyPuzzles(today()), 10 * 60_000).unref();
   app.listen(port, () => {
     console.log(`betonthehorns api on :${port}`);
   });

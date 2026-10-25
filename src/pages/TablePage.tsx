@@ -175,7 +175,6 @@ export default function TablePage() {
 
   // The AI coach is off (face-down) at ranked tables, and allowed in practice vs AI.
   useBlockCoach(match?.ranked !== false);
-  const myElo = match?.elo?.find((change) => change.walletId === address) ?? null;
 
   const mode = getGameMode(
     match && isGameModeId(match.mode) ? match.mode : "hands-up",
@@ -501,13 +500,7 @@ export default function TablePage() {
             {match?.status === "finished" ? (
               <div className="felt-action-buttons">
                 <p className="felt-result" aria-live="polite">
-                  {!match.ranked
-                    ? "Practice game: unranked"
-                    : myElo
-                      ? `Elo ${myElo.before} → ${myElo.after} (${myElo.after >= myElo.before ? "+" : ""}${myElo.after - myElo.before}), settled on Solana`
-                      : match.chainMatchId
-                        ? "Settling your Elo on Solana…"
-                        : "Unrated: Solana was unavailable for this match"}
+                  {match.ranked ? "Ranked game: Elo updates on your profile" : "Practice game: unranked"}
                 </p>
                 <Link href="/play" className="club-button">
                   Back to dashboard

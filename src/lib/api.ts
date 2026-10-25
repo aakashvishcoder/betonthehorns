@@ -38,17 +38,10 @@ export type PublicMatch = {
   revealSeed: string | null;
   chain: ChainTx[];
   players: PublicPlayer[];
-  /** Ranked matches settle Elo on Solana; practice (vs AI) matches don't. */
+  /** Ranked matches settle Elo; practice (vs AI) matches don't. */
   ranked: boolean;
   /** Finishing place per wallet (1 = winner), filled in as players bust. */
   places: Record<string, number>;
-  /** sha256 of the shuffle seed, committed on Solana before the first deal. */
-  commitment: string;
-  /** The seed itself, revealed when the match ends. */
-  seed: string | null;
-  chainMatchId: string | null;
-  /** Elo before/after once a ranked result is settled on-chain. */
-  elo: { walletId: string; before: number; after: number }[] | null;
 };
 
 export type ChainTx = {
@@ -131,6 +124,38 @@ export type QueueSnapshot = {
   wallets: string[];
 };
 
+export type PuzzleChoice = "fold" | "call" | "shove";
+export type Puzzle = {
+  id: string;
+  day: string;
+  index: number;
+  kind: "draw" | "shove" | "defend";
+  difficulty: "easy" | "medium" | "hard";
+  title: string;
+  street: "preflop" | "turn";
+  hero: string[];
+  board: string[];
+  position: string;
+  situation: string;
+  assumption: string;
+  pot: number;
+  toCall: number;
+  bigBlind: number;
+  heroStack: number;
+  options: { id: PuzzleChoice; label: string }[];
+};
+export type PuzzleSolution = {
+  answer: PuzzleChoice;
+  explanation: string;
+  numbers: { label: string; value: string }[];
+};
+export type PuzzleResult = {
+  index: number;
+  choice: PuzzleChoice;
+  correct: boolean;
+  solution: PuzzleSolution;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
@@ -151,6 +176,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  puzzlesToday: () =>
+    request<{ day: string; puzzles: Puzzle[]; attempts: PuzzleResult[]; streak: number }>("/api/puzzles/today"),
+  answerPuzzle: (day: string, index: number, choice: PuzzleChoice) =>
+    request<PuzzleResult & { saved: boolean; streak: number }>("/api/puzzles/answer", {
+      method: "POST",
+      body: JSON.stringify({ day, index, choice }),
+    }),
+  puzzleLeaderboard: () =>
+    request<{ day: string; rows: { walletId: string; correct: number; answered: number; name: string }[] }>(
+      "/api/puzzles/leaderboard",
+    ),
   health: () => request<{ ok: boolean; db: boolean }>("/api/health"),
   authChallenge: (walletId: string) =>
     request<{ nonce: string; message: string }>(`/api/auth/challenge/${walletId}`),
