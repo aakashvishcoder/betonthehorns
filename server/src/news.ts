@@ -10,6 +10,17 @@ export const NEWS_QUERY = '(WSOP OR WPT OR EPT OR "World Series of Poker" OR "po
 /** The site is play-money only: skip casino, sportsbook and real-money promo stories. */
 const PROMO = /casino|sportsbook|betting|\bbet\b|bonus|promo|deposit|slots?\b|sweepstake|free spins|real[- ]money|odds boost|crypto casino|gambling site|best .* sites/i;
 
+/** A headline must actually be about poker (e.g. "EPT" also matches stock filings). */
+const POKER = /poker|wsop|\bwpt\b|\bept\b|bracelet|final table|main event|world series|high[- ]roller|heads[- ]up|hold'?em/i;
+const FINANCE = /\bform \d|\bplc\b|shares|stock|dividend|earnings|quarterly results/i;
+
+/** Whether a headline belongs in the ticker. Also applied to cached items, so tightening it costs no search. */
+export function isPokerStory(title: string, source: string) {
+  if (PROMO.test(title) || PROMO.test(source) || FINANCE.test(title)) return false;
+  if (title.trim().toLowerCase() === source.trim().toLowerCase()) return false; // a site's own page, not a story
+  return POKER.test(title);
+}
+
 export function cleanNews(raw: { title?: string; link?: string; source?: { name?: string }; iso_date?: string; date?: string }[]): NewsItem[] {
   const seen = new Set<string>();
   const items: NewsItem[] = [];
@@ -17,7 +28,7 @@ export function cleanNews(raw: { title?: string; link?: string; source?: { name?
     const title = r.title?.trim();
     const source = r.source?.name?.trim() ?? "";
     if (!title || !r.link?.startsWith("https://")) continue;
-    if (PROMO.test(title) || PROMO.test(source)) continue;
+    if (!isPokerStory(title, source)) continue;
     const key = title.toLowerCase().slice(0, 60);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -75,7 +86,8 @@ export class NewsFeed {
 export function newsHandler(feed: NewsFeed) {
   return async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== "GET") return res.writeHead(405).end();
-    const { items, updatedAt } = await feed.items();
+    const { items: cached, updatedAt } = await feed.items();
+    const items = cached.filter(i => isPokerStory(i.title, i.source));
     res.writeHead(200, { "content-type": "application/json", "cache-control": "public, max-age=600" }).end(JSON.stringify({ items, updatedAt }));
   };
 }

@@ -23,6 +23,9 @@ test("news filter drops casino/betting promos and duplicates", () => {
     story("Best online casino bonus codes this week"),
     story("EPT Barcelona: day 2 recap", "Sportsbook Daily"),
     story("Phil Ivey returns to high-stakes poker"),
+    story("Form 8.5 (EPT/RI)-Advanced Medical Solutions Group plc", "Yahoo Finance"),
+    story("Seminole Hard Rock Hollywood Poker", "Seminole Hard Rock Hollywood Poker"),
+    story("Local council meeting recap", "Daily News"), // not about poker
     { title: "No link", source: { name: "x" } },
     story("Insecure link", "PokerNews", "http://example.com/x"),
   ]);
