@@ -175,8 +175,9 @@ function applyDueStep(match: MatchState) {
 }
 
 async function takeLiveMatch(id: string) {
+  // With a database, the row is the truth: another instance may have finished this game.
   const cached = matches.get(id);
-  if (cached?.status === "playing") return cached;
+  if (!dbReady && cached?.status === "playing") return cached;
   const row = await loadLiveMatchRow(id);
   if (!isLiveMatch(row) || !isFresh(row) || isAbandoned(row)) return undefined;
   if (!chats.has(id)) chats.set(id, await loadChat(id));
@@ -214,7 +215,9 @@ export async function hydrateLiveMatches() {
 }
 
 export async function walletMatch(walletId: string) {
-  const id = (await seatedAt(walletId)) ?? byWallet.get(walletId) ?? (await findPlayingMatchId(walletId));
+  const id = dbReady
+    ? ((await seatedAt(walletId)) ?? (await findPlayingMatchId(walletId)))
+    : byWallet.get(walletId);
   if (!id) return undefined;
   const live = await takeLiveMatch(id);
   if (live?.status === "playing") return live;
@@ -547,13 +550,21 @@ export async function startPractice(walletId: string, mode: GameMode) {
 }
 
 /** End-of-game work, once per match across instances: Elo, hand history, style data, seats. */
+/**
+ * End-of-game work. Awaited by the request that finished the game: on Vercel anything left
+ * running after the response is frozen, which used to leave seats held ("Return to table" on a
+ * finished game) and hand histories unsaved (Analyze had no hands). Seats and history are safe
+ * to repeat, so they run before the once-only claim; Elo and style stats run once.
+ */
 async function finalizeOnce(match: MatchState) {
-  if (!(await claimFinalize(match.id).catch(() => false))) return;
-  await releaseSeats(match.id).catch((error) => console.warn("[seats] release", (error as Error).message));
   for (const player of match.players) if (byWallet.get(player.walletId) === match.id) byWallet.delete(player.walletId);
-  void import("./settle.js").then(({ settleMatch }) => settleMatch(match));
-  await saveHistory(match);
-  void finishTracking(match);
+  await releaseSeats(match.id).catch((error) => console.warn("[seats] release", (error as Error).message));
+  await saveHistory(match).catch((error) => console.warn("[history] save", (error as Error).message));
+  if (!(await claimFinalize(match.id).catch(() => false))) return;
+  await import("./settle.js")
+    .then(({ settleMatch }) => settleMatch(match))
+    .catch((error) => console.warn("[elo] settle", (error as Error).message));
+  await finishTracking(match);
 }
 
 async function publishQueue(mode: GameMode) {
@@ -571,7 +582,7 @@ async function fanoutMatch(match: MatchState, name = "state") {
       you: privateView(match, player.walletId),
     });
   }
-  if (match.status === "finished") void finalizeOnce(match);
+  if (match.status === "finished") await finalizeOnce(match);
   void saveMatchSnapshot(
     match.id,
     match.status,

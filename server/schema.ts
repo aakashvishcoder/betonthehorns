@@ -228,7 +228,7 @@ export async function playingWalletIds() {
   if (!dbReady) return new Set<string>();
   // wallet_games (seats.ts) covers practice tables too, and is written before match_players.
   const result = await query<{ wallet_id: string }>(
-    `SELECT wallet_id FROM wallet_games
+    `SELECT w.wallet_id FROM wallet_games w JOIN matches m ON m.id = w.match_id AND m.status = 'playing'
      UNION
      SELECT p.wallet_id
      FROM match_players p
@@ -782,7 +782,8 @@ export async function closeLiveMatch(matchId: string) {
 export async function findPlayingMatchId(walletId: string) {
   if (!dbReady) return null;
   const result = await query<{ id: string }>(
-    `SELECT match_id AS id FROM wallet_games WHERE wallet_id = $1
+    `SELECT w.match_id AS id FROM wallet_games w JOIN matches m ON m.id = w.match_id AND m.status = 'playing'
+     WHERE w.wallet_id = $1
      UNION ALL
      (SELECT m.id
       FROM matches m
