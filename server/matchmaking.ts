@@ -461,6 +461,34 @@ async function tryMatch(mode: GameMode, pinned: string[] = []) {
   return match;
 }
 
+/** Practice vs AI: an unranked table right away, AI personas in the other seats. */
+export async function startPractice(walletId: string, mode: GameMode) {
+  const existing = walletMatch(walletId);
+  if (existing && existing.status === "playing") return { matchId: existing.id };
+  if (existing) byWallet.delete(walletId);
+  if (!takePracticeGame(walletId)) {
+    throw Object.assign(new Error("You've played today's AI practice games. Come back tomorrow!"), { status: 429 });
+  }
+  try {
+    leaveAllQueues(walletId);
+    const elo = (await currentElos([walletId], mode).catch(() => new Map<string, number>())).get(walletId) ?? STARTING_ELO;
+    const { ids, players } = await practiceSeats(walletId, mode, MODE_SEATS[mode], elo);
+    const match = createMatch(mode, [walletId], ids, { ranked: false });
+    matches.set(match.id, match);
+    chats.set(match.id, []);
+    byWallet.set(walletId, match.id);
+    registerPractice(match, players);
+    await insertMatch(match.id, match.mode, publicMatch(match), match.commitHash).catch((error) =>
+      console.warn("[db] persist practice", (error as Error).message),
+    );
+    await broadcastMatch(match, "matched");
+    return { matchId: match.id };
+  } catch (error) {
+    refundPracticeGame(walletId);
+    throw error;
+  }
+}
+
 async function publishQueue(mode: GameMode) {
   await publish(`queue:${mode}`, "waiting", await queueSnapshot(mode));
 }

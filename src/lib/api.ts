@@ -1,4 +1,5 @@
 import type { GameModeId } from "@/lib/game-modes";
+import { SESSION_EXPIRED, sessionHeader } from "@/lib/session";
 
 const base = import.meta.env.VITE_API_URL ?? "";
 
@@ -38,6 +39,10 @@ export type PublicMatch = {
   chain: ChainTx[];
   revision?: number;
   players: PublicPlayer[];
+  /** Ranked matches settle Elo; practice (vs AI) matches don't. */
+  ranked: boolean;
+  /** Finishing place per wallet (1 = winner), filled in as players bust. */
+  places: Record<string, number>;
 };
 
 export type ChainTx = {
@@ -120,15 +125,51 @@ export type QueueSnapshot = {
   wallets: string[];
 };
 
+export type PuzzleChoice = "fold" | "call" | "shove";
+export type Puzzle = {
+  id: string;
+  day: string;
+  index: number;
+  kind: "draw" | "shove" | "defend";
+  difficulty: "easy" | "medium" | "hard";
+  title: string;
+  street: "preflop" | "turn";
+  hero: string[];
+  board: string[];
+  position: string;
+  situation: string;
+  assumption: string;
+  pot: number;
+  toCall: number;
+  bigBlind: number;
+  heroStack: number;
+  options: { id: PuzzleChoice; label: string }[];
+};
+export type PuzzleSolution = {
+  answer: PuzzleChoice;
+  explanation: string;
+  numbers: { label: string; value: string }[];
+};
+export type PuzzleResult = {
+  index: number;
+  choice: PuzzleChoice;
+  correct: boolean;
+  solution: PuzzleSolution;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...sessionHeader(),
       ...(init?.headers ?? {}),
     },
   });
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (response.status === 401 && !path.startsWith("/api/auth/")) {
+    window.dispatchEvent(new Event(SESSION_EXPIRED));
+  }
   if (!response.ok) {
     throw new Error(data.error || response.statusText);
   }
@@ -136,7 +177,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  puzzlesToday: () =>
+    request<{ day: string; puzzles: Puzzle[]; attempts: PuzzleResult[]; streak: number }>("/api/puzzles/today"),
+  answerPuzzle: (day: string, index: number, choice: PuzzleChoice) =>
+    request<PuzzleResult & { saved: boolean; streak: number }>("/api/puzzles/answer", {
+      method: "POST",
+      body: JSON.stringify({ day, index, choice }),
+    }),
+  puzzleLeaderboard: () =>
+    request<{ day: string; rows: { walletId: string; correct: number; answered: number; name: string }[] }>(
+      "/api/puzzles/leaderboard",
+    ),
   health: () => request<{ ok: boolean; db: boolean }>("/api/health"),
+  authChallenge: (walletId: string) =>
+    request<{ nonce: string; message: string }>(`/api/auth/challenge/${walletId}`),
+  login: (walletId: string, signature: string) =>
+    request<{ walletId: string; token: string; expires: number }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ walletId, signature }),
+    }),
+  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   wallet: (walletId: string) =>
     request<{
       walletId: string;
@@ -162,6 +222,11 @@ export const api = {
       body: JSON.stringify({ walletId }),
     }),
   queue: (mode: GameModeId) => request<QueueSnapshot>(`/api/queue/${mode}`),
+  practice: (mode: GameModeId) =>
+    request<{ matchId: string }>("/api/practice", {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
   joinQueue: (walletId: string, mode: GameModeId) =>
     request<{
       status: "queued" | "playing";
