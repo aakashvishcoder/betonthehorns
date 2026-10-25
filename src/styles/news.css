@@ -1,0 +1,120 @@
+/* Poker news ticker: sits under the suit marquee and borrows its band, suits and type. */
+.news-ticker {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  height: 56px;
+  border-block: 1px solid #3b094966;
+  background: #000000b3;
+}
+.news-ticker-label {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 0 max(18px, calc((100vw - 1216px) / 2));
+  border-right: 1px solid #3b0949;
+  color: #e1b0f7;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+.news-ticker-label b {
+  font-size: 18px;
+  font-weight: 400;
+  color: #fbf5fe;
+}
+.news-ticker-viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 32px,
+    #000 calc(100% - 32px),
+    transparent
+  );
+}
+.news-ticker-track {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  animation: marquee 70s linear infinite;
+}
+.news-ticker-track li {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-right: 22px;
+  white-space: nowrap;
+}
+.news-ticker-track b {
+  font-size: 20px;
+  font-weight: 400;
+  color: #fbf5fe;
+}
+.news-ticker-track b.is-red {
+  color: var(--red);
+}
+.news-ticker-track a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 9px;
+  color: #edd3fb;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.news-ticker-track a:hover,
+.news-ticker-track a:focus-visible {
+  color: #fbf5fe;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.news-ticker-track small {
+  color: #a79aae;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+/* Stop to read: hover, keyboard focus, or the site's motion pause. */
+.news-ticker:hover .news-ticker-track,
+.news-ticker:focus-within .news-ticker-track,
+.site-shell[data-motion-paused="true"] .news-ticker-track {
+  animation-play-state: paused;
+}
+@media (max-width: 760px) {
+  .news-ticker {
+    height: 48px;
+  }
+  .news-ticker-label {
+    padding-inline: 12px;
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  .news-ticker-track a {
+    font-size: 12px;
+  }
+}
+/* No scrolling for reduced motion: a swipeable row instead. */
+@media (prefers-reduced-motion: reduce) {
+  .news-ticker-track {
+    animation: none;
+  }
+  .news-ticker-viewport {
+    overflow-x: auto;
+    mask-image: none;
+  }
+  .news-ticker-track li[aria-hidden] {
+    display: none;
+  }
+}

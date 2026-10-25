@@ -9,6 +9,8 @@ import { MemoryChain } from "./chain.ts";
 import { snowflakeAuthFromEnv } from "./ai/cortex.ts";
 import { MemoryStyleStore, SnowflakeStyleStore } from "./ai/style-store.ts";
 import { coachHandler } from "./coach.ts";
+import { NewsFeed, newsHandler } from "./news.ts";
+import { CoachSearch } from "./serpapi.ts";
 import { MODES, type Mode } from "./matchmaker.ts";
 import { startGameServer } from "./server.ts";
 
@@ -28,11 +30,19 @@ export function startPrototype(
     return raw ? JSON.parse(raw) : {};
   };
 
-  const coach = coachHandler({ apiKey: process.env.MODEL_API_KEY, inRankedGame: w => game.inRankedGame(w), log: options.log });
+  const serpKey = process.env.SERPAPI_KEY;
+  const coach = coachHandler({
+    apiKey: process.env.MODEL_API_KEY,
+    inRankedGame: w => game.inRankedGame(w),
+    search: serpKey ? new CoachSearch(serpKey) : undefined,
+    log: options.log,
+  });
+  const news = newsHandler(new NewsFeed(serpKey, { log: options.log }));
 
   const http = createServer(async (req, res) => {
     try {
       if (req.url === "/api/coach") return await coach(req, res);
+      if (req.url === "/api/news") return await news(req, res);
       if (req.method === "GET" && req.url === "/") {
         return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(await readFile(page));
       }

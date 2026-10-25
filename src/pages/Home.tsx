@@ -14,6 +14,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import { Brand, Chip, TablePreview } from "@/components/poker/PokerVisuals";
 import TableSetup from "@/components/poker/TableSetup";
+import NewsTicker from "@/components/poker/NewsTicker";
 import SmoothScroll from "@/components/poker/SmoothScroll";
 import {
   PokerAtmosphere,
@@ -223,6 +224,7 @@ export default function Home() {
               ))}
             </div>
           </div>
+          <NewsTicker />
           <section
             id="the-table"
             className="experience-section page-width"

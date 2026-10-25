@@ -190,6 +190,18 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.coach-sources {
+  display: block;
+  margin-top: 6px;
+  color: var(--coach-muted);
+  font-size: 11px;
+}
+.coach-sources a {
+  color: var(--coach-violet);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .coach-message--assistant {
   align-self: flex-start;
   padding-left: 10px;

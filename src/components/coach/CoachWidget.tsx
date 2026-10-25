@@ -4,7 +4,12 @@ import { deckArt } from "@/lib/poker-design";
 import { useCoachBlocked } from "./coachGate";
 import "@/styles/coach.css";
 
-type Message = { role: "user" | "assistant"; content: string };
+type Source = { title: string; link: string; source: string };
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  sources?: Source[];
+};
 
 const HISTORY_SENT = 6;
 const STARTERS = [
@@ -86,10 +91,18 @@ export default function CoachWidget() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         reply?: string;
+        sources?: Source[];
         error?: string;
       };
       if (res.ok && data.reply)
-        setMessages([...next, { role: "assistant", content: data.reply }]);
+        setMessages([
+          ...next,
+          {
+            role: "assistant",
+            content: data.reply,
+            sources: data.sources?.length ? data.sources : undefined,
+          },
+        ]);
       else
         setNotice(
           data.error ?? "The coach couldn't answer just now. Please try again.",
@@ -181,9 +194,26 @@ export default function CoachWidget() {
               </div>
             )}
             {messages.map((m, i) => (
-              <p key={i} className={`coach-message coach-message--${m.role}`}>
+              <div key={i} className={`coach-message coach-message--${m.role}`}>
                 {m.content}
-              </p>
+                {m.sources && (
+                  <span className="coach-sources">
+                    Sources:{" "}
+                    {m.sources.map((s, j) => (
+                      <a
+                        key={s.link}
+                        href={s.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={s.title}
+                      >
+                        {s.source}
+                        {j < m.sources!.length - 1 ? " · " : ""}
+                      </a>
+                    ))}
+                  </span>
+                )}
+              </div>
             ))}
             {thinking && (
               <p
