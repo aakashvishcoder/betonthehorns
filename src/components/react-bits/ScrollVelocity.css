@@ -1,0 +1,18 @@
+.scroll-velocity-row {
+  position: relative;
+  overflow: hidden;
+}
+
+.scroll-velocity-track {
+  display: flex;
+  white-space: nowrap;
+  text-align: center;
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.scroll-velocity-track span {
+  flex-shrink: 0;
+}

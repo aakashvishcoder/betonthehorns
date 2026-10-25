@@ -27,6 +27,16 @@ import {
   walletMatch,
 } from "./matchmaking.js";
 import { privateView, publicMatch } from "./engine.js";
+import { startPractice } from "./matchmaking.js";
+import { issueChallenge, login, requireWallet, sessionWallet } from "./session.js";
+import { dailyPuzzles, publicPuzzle, today, type Choice } from "./puzzles.js";
+import { attemptsFor, leaderboard, migratePuzzles, saveAttempt, streakFor } from "./puzzle-store.js";
+import { analyze, AnalysisError, migrateAnalysis, savedAnalysis } from "./analysis.js";
+import { migrateSeats } from "./seats.js";
+import { seatLabel } from "./names.js";
+import { coachHandler } from "./src/coach.ts";
+import { NewsFeed, newsHandler } from "./src/news.ts";
+import { CoachSearch } from "./src/serpapi.ts";
 import { MODES, type ActionType, type GameMode } from "./types.js";
 
 const origin = process.env.CLIENT_ORIGIN || "http://127.0.0.1:5176";
@@ -52,19 +62,17 @@ function isWalletId(value: unknown): value is string {
   );
 }
 
-function readWallet(req: express.Request) {
-  const fromBody = (req.body as { walletId?: string } | undefined)?.walletId;
-  const fromQuery = typeof req.query.walletId === "string" ? req.query.walletId : undefined;
-  const fromHeader = req.header("x-wallet-id");
-  return fromBody || fromQuery || fromHeader;
-}
-
 let booted: Promise<void> | null = null;
 
 export function ensureReady() {
   if (!booted) {
     booted = (async () => {
       await migrate();
+      if (dbReady) {
+        await migrateSeats().catch((error) => console.warn("[db] seats", (error as Error).message));
+        await migrateAnalysis().catch((error) => console.warn("[db] analysis", (error as Error).message));
+        await migratePuzzles().catch((error) => console.warn("[db] puzzles", (error as Error).message));
+      }
       await hydrateLiveMatches();
       void refundOpenEscrows().catch((error) =>
         console.warn("[elo] refund", (error as Error).message),
@@ -118,6 +126,22 @@ export function createApp() {
       credentials: true,
     }),
   );
+  // AI coach (Muse) and news (SerpApi). Mounted before express.json(): these read the raw body.
+  const serpKey = process.env.SERPAPI_KEY;
+  const coach = coachHandler({
+    apiKey: process.env.MODEL_API_KEY,
+    walletOf: (req) => sessionWallet(req as express.Request),
+    inRankedGame: async (wallet) => {
+      const match = await walletMatch(wallet);
+      return match?.status === "playing" && match.ranked;
+    },
+    search: serpKey ? new CoachSearch(serpKey) : undefined,
+    log: (msg) => console.log(`[coach] ${msg}`),
+  });
+  const news = newsHandler(new NewsFeed(serpKey, { log: (msg) => console.log(`[news] ${msg}`) }));
+  app.post("/api/coach", (req, res) => void coach(req, res));
+  app.get("/api/news", (req, res) => void news(req, res));
+
   app.use(express.json());
   app.get("/api/health", (_req, res) => {
     const needed = [
@@ -150,6 +174,35 @@ export function createApp() {
       });
   });
 
+  // Signed wallet login: sign a one-time message (free, no transaction) for a 12-hour session.
+  // Every route that acts for a wallet takes it from that session, never from the request body.
+  app.get("/api/auth/challenge/:walletId", (req, res) => {
+    if (!isWalletId(req.params.walletId)) {
+      res.status(400).json({ error: "Invalid wallet" });
+      return;
+    }
+    res.json(issueChallenge(req.params.walletId));
+  });
+
+  app.post("/api/auth/login", (req, res) => {
+    const { walletId, signature, nonce } = req.body as { walletId?: string; signature?: string; nonce?: string };
+    if (!isWalletId(walletId) || typeof signature !== "string" || typeof nonce !== "string") {
+      res.status(400).json({ error: "walletId, signature and nonce required" });
+      return;
+    }
+    const session = login(walletId, signature, nonce);
+    if (!session) {
+      res.status(401).json({ error: "Signature check failed. Please sign in again." });
+      return;
+    }
+    res.json({ walletId, ...session });
+  });
+
+  // Tokens are stateless; signing out just forgets the token in the browser.
+  app.post("/api/auth/logout", (_req, res) => {
+    res.json({ ok: true });
+  });
+
   app.get("/api/wallet/:walletId", async (req, res) => {
     try {
       if (!isWalletId(req.params.walletId)) {
@@ -173,10 +226,11 @@ export function createApp() {
 
   app.post("/api/profile/name", async (req, res) => {
     try {
-      const walletId = readWallet(req);
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
       const displayName = (req.body as { displayName?: string }).displayName;
-      if (!isWalletId(walletId) || typeof displayName !== "string") {
-        res.status(400).json({ error: "walletId and displayName required" });
+      if (typeof displayName !== "string") {
+        res.status(400).json({ error: "displayName required" });
         return;
       }
       if (!dbReady) {
@@ -225,10 +279,11 @@ export function createApp() {
 
   app.post("/api/profile/showcase", async (req, res) => {
     try {
-      const walletId = readWallet(req);
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
       const shown = (req.body as { shown?: unknown }).shown;
-      if (!isWalletId(walletId) || !Array.isArray(shown) || shown.some((key) => typeof key !== "string")) {
-        res.status(400).json({ error: "walletId and shown keys required" });
+      if (!Array.isArray(shown) || shown.some((key) => typeof key !== "string")) {
+        res.status(400).json({ error: "shown keys required" });
         return;
       }
       if (!dbReady) {
@@ -252,11 +307,9 @@ export function createApp() {
 
   app.post("/api/ably/token", async (req, res) => {
     try {
-      const walletId = readWallet(req);
-      if (!isWalletId(walletId)) {
-        res.status(400).json({ error: "walletId required" });
-        return;
-      }
+      // The token's clientId is the wallet that inbox messages act as, so it needs the session.
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
       res.json(await tokenRequest(walletId));
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -273,25 +326,24 @@ export function createApp() {
 
   app.post("/api/queue", async (req, res) => {
     try {
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
       const { mode } = req.body as { mode?: string };
-      const walletId = readWallet(req);
-      if (!isWalletId(walletId) || !isMode(mode)) {
-        res.status(400).json({ error: "walletId and mode required" });
+      if (!isMode(mode)) {
+        res.status(400).json({ error: "mode required" });
         return;
       }
       res.json(await joinQueue(walletId, mode));
     } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
+      const { status = 400, matchId } = error as { status?: number; matchId?: string };
+      res.status(status).json({ error: (error as Error).message, ...(matchId ? { matchId } : {}) });
     }
   });
 
   app.delete("/api/queue", async (req, res) => {
     try {
-      const walletId = readWallet(req);
-      if (!isWalletId(walletId)) {
-        res.status(400).json({ error: "walletId required" });
-        return;
-      }
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
       await leaveQueue(walletId);
       res.json({ ok: true });
     } catch (error) {
@@ -300,11 +352,14 @@ export function createApp() {
   });
 
   app.get("/api/match/active/:walletId", async (req, res) => {
-    if (!isWalletId(req.params.walletId)) {
-      res.status(400).json({ error: "Invalid wallet" });
+    // Includes the player's hole cards, so only their own session may ask.
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
+    if (req.params.walletId !== walletId) {
+      res.status(403).json({ error: "Not your wallet" });
       return;
     }
-    const match = await walletMatch(req.params.walletId);
+    const match = await walletMatch(walletId);
     if (!match || match.status !== "playing") {
       res.json({ match: null });
       return;
@@ -317,8 +372,8 @@ export function createApp() {
   });
 
   app.get("/api/match/:id", async (req, res) => {
-    const walletId = readWallet(req);
-    const view = await getMatchView(req.params.id, isWalletId(walletId) ? walletId : undefined);
+    // Hole cards only for the signed-in player; anyone else gets the public view.
+    const view = await getMatchView(req.params.id, sessionWallet(req) ?? undefined);
     if (!view) {
       res.status(404).json({ error: "Match not found" });
       return;
@@ -328,10 +383,11 @@ export function createApp() {
 
   app.post("/api/match/:id/action", async (req, res) => {
     try {
-      const walletId = readWallet(req);
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
       const { type, raiseTo } = req.body as { type?: ActionType; raiseTo?: number };
-      if (!isWalletId(walletId) || !type) {
-        res.status(400).json({ error: "walletId and type required" });
+      if (!type) {
+        res.status(400).json({ error: "type required" });
         return;
       }
       res.json(await playAction(req.params.id, walletId, { type, raiseTo }));
@@ -342,15 +398,134 @@ export function createApp() {
 
   app.post("/api/match/:id/chat", async (req, res) => {
     try {
-      const walletId = readWallet(req);
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
       const text = (req.body as { text?: string }).text;
-      if (!isWalletId(walletId) || typeof text !== "string") {
-        res.status(400).json({ error: "walletId and text required" });
+      if (typeof text !== "string") {
+        res.status(400).json({ error: "text required" });
         return;
       }
       res.json({ messages: await addChat(req.params.id, walletId, text) });
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  /** Practice vs AI: an unranked table right away, AI personas in the other seats. */
+  app.post("/api/practice", async (req, res) => {
+    try {
+      const walletId = requireWallet(req, res);
+      if (!walletId) return;
+      const { mode } = req.body as { mode?: string };
+      if (!isMode(mode)) {
+        res.status(400).json({ error: "mode required" });
+        return;
+      }
+      res.json(await startPractice(walletId, mode));
+    } catch (error) {
+      const { status = 500, matchId } = error as { status?: number; matchId?: string };
+      res.status(status).json({ error: (error as Error).message, ...(matchId ? { matchId } : {}) });
+    }
+  });
+
+  // Daily puzzles: same five for everyone each UTC day. Answers never leave the server until you
+  // commit to a choice; signed-in players get one try per puzzle, a streak and the leaderboard.
+  app.get("/api/puzzles/today", async (req, res) => {
+    try {
+      const day = today();
+      const puzzles = dailyPuzzles(day);
+      const walletId = sessionWallet(req);
+      const attempts = walletId ? await attemptsFor(walletId, day) : [];
+      res.json({
+        day,
+        puzzles: puzzles.map(publicPuzzle),
+        attempts: attempts.map((a) => ({ ...a, solution: puzzles[a.index - 1]!.solution })),
+        streak: walletId ? await streakFor(walletId, day) : 0,
+      });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  app.post("/api/puzzles/answer", async (req, res) => {
+    try {
+      const { day, index, choice } = req.body as { day?: string; index?: number; choice?: string };
+      if (day !== today()) {
+        res.status(410).json({ error: "That puzzle set has ended. Reload for today's puzzles." });
+        return;
+      }
+      const puzzle = dailyPuzzles(day)[Number(index) - 1];
+      if (!puzzle || !puzzle.options.some((o) => o.id === choice)) {
+        res.status(400).json({ error: "Unknown puzzle or choice" });
+        return;
+      }
+      const correct = choice === puzzle.solution.answer;
+      const walletId = sessionWallet(req);
+      if (walletId) {
+        const saved = await saveAttempt(walletId, day, { index: puzzle.index, choice: choice as Choice, correct });
+        if (!saved) {
+          const previous = (await attemptsFor(walletId, day)).find((a) => a.index === puzzle.index)!;
+          res.status(409).json({ error: "You've already answered this one.", ...previous, solution: puzzle.solution });
+          return;
+        }
+      }
+      res.json({
+        index: puzzle.index,
+        choice,
+        correct,
+        solution: puzzle.solution,
+        saved: Boolean(walletId),
+        streak: walletId ? await streakFor(walletId, day) : 0,
+      });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  app.get("/api/puzzles/leaderboard", async (_req, res) => {
+    try {
+      const day = today();
+      const rows = await leaderboard(day);
+      res.json({ day, rows: rows.map((r) => ({ ...r, name: seatLabel(r.walletId) })) });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  // Post-game analysis (Claude Sonnet 4.5 on Snowflake Cortex), private to the player.
+  // GET returns a saved one (or null); POST writes one, counted against the daily cap.
+  const analysisKinds = { match: /^[0-9a-f-]{36}$/, puzzles: /^\d{4}-\d{2}-\d{2}$/ } as const;
+  function analysisTarget(req: express.Request, res: express.Response) {
+    const walletId = requireWallet(req, res);
+    if (!walletId) return null;
+    const kind = req.params.kind as keyof typeof analysisKinds;
+    const ref = String(req.params.ref);
+    if (!(kind in analysisKinds) || !analysisKinds[kind].test(ref)) {
+      res.status(400).json({ error: "Unknown analysis" });
+      return null;
+    }
+    return { walletId, kind, ref };
+  }
+
+  app.get("/api/analysis/:kind/:ref", async (req, res) => {
+    const target = analysisTarget(req, res);
+    if (!target) return;
+    try {
+      res.json({ analysis: await savedAnalysis(target.walletId, target.kind, target.ref) });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  app.post("/api/analysis/:kind/:ref", async (req, res) => {
+    const target = analysisTarget(req, res);
+    if (!target) return;
+    try {
+      res.json({ analysis: await analyze(target.walletId, target.kind, target.ref) });
+    } catch (error) {
+      const status = error instanceof AnalysisError ? error.status : 502;
+      if (status === 502) console.warn("[analysis]", (error as Error).message);
+      res.status(status).json({ error: status === 502 ? "The analysis model didn't respond. Try again in a moment." : (error as Error).message });
     }
   });
 

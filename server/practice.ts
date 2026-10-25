@@ -9,7 +9,10 @@ import { legalActions } from "./engine.js";
 import type { ActionInput, Card, GameMode, MatchState } from "./types.js";
 
 /**
- * Practice vs AI and play-style data, on top of the main engine:
+ * Practice vs AI and play-style data, on top of the main engine. Nothing here lives in a
+ * server's memory between requests (serverless): the AI seats' style and skill are stored in
+ * the match, each AI decision rebuilds its seat, and style stats are replayed from the
+ * match's hand history when it ends.
  * - AI seats (The Shark / Maniac / Rock) decide with Snowflake Cortex, falling back to rules
  * - every human's per-game style counters go to Snowflake (PLAYER_STYLE view) when a game ends,
  *   and the next practice game mirrors that style at a skill level matching their Elo
@@ -17,15 +20,10 @@ import type { ActionInput, Card, GameMode, MatchState } from "./types.js";
  */
 const snowflake = snowflakeAuthFromEnv();
 export const styleStore: StyleStore = snowflake ? new SnowflakeStyleStore(snowflake) : new MemoryStyleStore();
+// ponytail: per-instance cap; count today's practice matches in the database if it must be exact.
 const practiceToday = new DailyCap(Number(process.env.AI_PRACTICE_PER_DAY ?? 5));
-/** Human-like pause before an AI acts, in ms (tests set it to [0, 0]). */
-export const AI_TIMING = { thinkMs: [1_000, 2_500] as [number, number] };
-
-const ais = new Map<string, Map<string, AiPlayer>>(); // match id -> AI seats
-const thinking = new Set<string>(); // "match:move" keys already being decided
-/** Actions taken per match; identifies each AI turn uniquely (the engine doesn't log every action). */
-const moves = new Map<string, number>();
-const trackers = new Map<string, { stats: StatsTracker; hand: number; ended: boolean }>();
+/** Human-like pause before an AI acts, in ms (tests set it to 0). */
+export const AI_TIMING = { thinkMs: 1_400 };
 
 console.log(`[ai] practice opponents: ${snowflake ? "Snowflake Cortex + style data" : "rules only (no SNOWFLAKE_* env)"}`);
 
@@ -39,22 +37,14 @@ export function refundPracticeGame(walletId: string) {
   practiceToday.refund(walletId);
 }
 
-/** Builds the AI seats for a practice table, mirroring this player's style at their Elo. */
+/** The AI seat ids and the style/skill they'll play with, mirroring this player at their Elo. */
 export async function practiceSeats(walletId: string, mode: GameMode, seats: number, elo: number) {
   const observed = await styleStore.styleOf(walletId).catch((error) => {
     console.warn("[ai] style lookup:", (error as Error).message);
     return null;
   });
-  const mirrored = blendStyle(observed, elo);
-  const skill = skillFromElo(elo);
-  const ids = aiSeats(seats - 1);
-  const players = new Map(ids.map((id) => [id, new AiPlayer(id, personaOf(id)!, mirrored, skill, snowflake)]));
   console.log(`[ai] practice for ${walletId.slice(0, 4)}… (${mode}, Elo ${elo}, ${observed ? `${observed.hands} hands of history` : "no history"})`);
-  return { ids, players };
-}
-
-export function registerPractice(match: MatchState, players: Map<string, AiPlayer>) {
-  ais.set(match.id, players);
+  return { ids: aiSeats(seats - 1), ai: { style: blendStyle(observed, elo), skill: skillFromElo(elo) } };
 }
 
 function viewFor(match: MatchState, id: string): TableView {
@@ -79,87 +69,43 @@ function viewFor(match: MatchState, id: string): TableView {
   };
 }
 
-/**
- * If an AI seat is to act, decide (Cortex while a human is still in the game, rules otherwise)
- * after a human-like pause, then call `act`. Safe to call on every tick.
- */
-export function driveAi(match: MatchState, act: (walletId: string, input: ActionInput) => Promise<void>) {
-  const seats = ais.get(match.id);
-  if (!seats || match.status !== "playing" || match.actionIndex === null) return;
-  const actor = match.players[match.actionIndex]!;
-  const ai = seats.get(actor.walletId);
-  if (!ai) return;
-  const key = `${match.id}:${moves.get(match.id) ?? 0}`;
-  if (thinking.has(key)) return;
-  thinking.add(key);
+/** The AI seat whose turn it is, once it has "thought" for a moment; otherwise null. */
+export function aiToAct(match: MatchState, now = Date.now()) {
+  if (!match.ai || match.status !== "playing" || match.actionIndex === null || match.runoutAt) return null;
+  if (match.street === "showdown" || match.street === "complete") return null;
+  const actor = match.players[match.actionIndex];
+  if (!actor?.bot || !isAi(actor.walletId)) return null;
+  return now >= (match.lastActionAt ?? 0) + AI_TIMING.thinkMs ? actor.walletId : null;
+}
 
+/** Decide the AI seat's move (Cortex while a human is still in the game, rules otherwise). */
+export async function decideAi(match: MatchState, walletId: string): Promise<ActionInput> {
+  const persona = personaOf(walletId)!;
+  const seat = new AiPlayer(walletId, persona, match.ai!.style, match.ai!.skill, snowflake);
   const humanIn = match.players.some((p) => !p.bot && !p.busted);
-  const view = viewFor(match, actor.walletId);
-  const bigSpot = view.legal.toCall > 0.2 * view.stack;
-  const [min, max] = AI_TIMING.thinkMs;
-  const pause = min + Math.random() * (max - min) + (bigSpot && max > 0 ? 1_500 : 0);
-  void Promise.all([ai.decide(view, { useCortex: humanIn }), new Promise((r) => setTimeout(r, pause))])
-    .then(async ([decision]) => {
-      if (match.status !== "playing" || match.players[match.actionIndex ?? -1]?.walletId !== actor.walletId) return;
-      if (decision.error) console.warn(`[ai] ${actor.walletId} fell back to rules: ${decision.error}`);
-      const a = decision.action;
-      await act(actor.walletId, a.type === "raise" ? { type: "raise", raiseTo: a.to } : { type: a.type });
-    })
-    .catch((error) => console.warn("[ai] move failed:", (error as Error).message))
-    .finally(() => setTimeout(() => thinking.delete(key), 30_000).unref());
+  const decision = await seat.decide(viewFor(match, walletId), { useCortex: humanIn });
+  if (decision.error) console.warn(`[ai] ${walletId} fell back to rules: ${decision.error}`);
+  const a = decision.action;
+  return a.type === "raise" ? { type: "raise", raiseTo: a.to } : { type: a.type };
 }
 
-/** Practice is over for the human once they bust: don't let the AIs play on alone. */
-export function humanBustedOut(match: MatchState) {
-  return ais.has(match.id) && match.players.filter((p) => !p.bot).every((p) => p.busted);
-}
-
-// ---- Style counters (all games, ranked and practice) ----
-
-/** Call before applying any action (human, timeout or AI). */
-export function trackAction(match: MatchState, walletId: string, input: ActionInput) {
-  moves.set(match.id, (moves.get(match.id) ?? 0) + 1);
-  syncHands(match);
-  const t = trackers.get(match.id)!;
-  const action = input.type === "raise" ? { type: "raise" as const, to: input.raiseTo ?? 0 } : { type: input.type };
-  t.stats.action(walletId, action, match.street === "complete" ? "river" : match.street);
-}
-
-/** Call whenever the match changes (e.g. on every broadcast) to close and open hands. */
-export function syncHands(match: MatchState) {
-  let t = trackers.get(match.id);
-  if (!t) {
-    t = { stats: new StatsTracker(), hand: 0, ended: true };
-    trackers.set(match.id, t);
-  }
-  const handOver = match.street === "showdown" || match.street === "complete";
-  if (!t.ended && (handOver || match.handNumber !== t.hand)) {
-    const winners = new Set(match.winners.map((w) => w.walletId));
-    const wentToShowdown = match.winners.some((w) => w.hand !== undefined);
-    const shown = wentToShowdown ? match.players.filter((p) => p.hole && !p.folded) : [];
-    t.stats.handEnded(match.board.length >= 3, shown.map((p) => ({ player: p.walletId, won: winners.has(p.walletId) })));
-    t.ended = true;
-  }
-  if (match.handNumber !== t.hand && !handOver) {
-    t.hand = match.handNumber;
-    t.ended = false;
-    t.stats.handStarted(match.players.filter((p) => !p.busted).map((p) => p.walletId));
-  }
-}
-
-/** When a game ends: one style row per human to Snowflake, then forget the match. */
+/** When a game ends: replay its hand history into style counters, one row per human. */
 export async function finishTracking(match: MatchState) {
-  syncHands(match);
-  const t = trackers.get(match.id);
-  trackers.delete(match.id);
-  ais.delete(match.id);
-  moves.delete(match.id);
-  if (!t) return;
+  const stats = new StatsTracker();
+  for (const hand of match.history ?? []) {
+    stats.handStarted(Object.keys(hand.stacks));
+    for (const a of hand.actions) {
+      const action = a.action === "raise" ? { type: "raise" as const, to: a.raiseTo ?? 0 } : { type: a.action as "fold" | "check" | "call" };
+      stats.action(a.player, action, (a.street === "complete" || a.street === "showdown" ? "river" : a.street) as "preflop" | "flop" | "turn" | "river");
+    }
+    const winners = new Set(hand.winners.map((w) => w.player));
+    stats.handEnded(hand.board.length >= 3, hand.shown.map((player) => ({ player, won: winners.has(player) })));
+  }
   const mode = ({ "hands-up": "heads_up", "sng-4": "four", "sng-6": "six" } as const)[match.mode];
   const rows = match.players
     .filter((p) => !p.bot && !isAi(p.walletId))
     .flatMap((p) => {
-      const s = t.stats.stats.get(p.walletId);
+      const s = stats.stats.get(p.walletId);
       return s ? [{ ...s, wallet: p.walletId, mode, ranked: match.ranked, place: match.places[p.walletId] ?? 0, players: match.players.length }] : [];
     });
   await styleStore.record(rows).catch((error) => console.warn("[ai] style write:", (error as Error).message));

@@ -1,0 +1,127 @@
+.analysis-start {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.analysis-start .club-button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.analysis-error {
+  color: #e98392;
+  font-size: 12px;
+}
+
+.analysis {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 10px;
+  border: 1px solid #6f208852;
+  background: #3b094926;
+  text-align: left;
+}
+.analysis-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.analysis-head h3 {
+  margin-top: 4px;
+  color: #fbf5fe;
+  font-size: 17px;
+  line-height: 1.35;
+}
+.analysis-grade {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  border: 1px solid #d081f1;
+  background: #6f2088;
+  color: #fbf5fe;
+  font-size: 22px;
+  font-weight: 650;
+}
+.analysis-summary,
+.analysis-focus {
+  color: #edd3fb;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.analysis h4 {
+  margin-bottom: 6px;
+  color: #b9aebe;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.analysis-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.analysis-lists ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 16px;
+  list-style: disc;
+  color: #edd3fb;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.analysis-hands {
+  display: grid;
+  gap: 10px;
+}
+.analysis-hand {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #151018;
+}
+.analysis-hand strong {
+  color: #fbf5fe;
+  font-size: 14px;
+}
+.analysis-ref {
+  justify-self: start;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: #3b094949;
+  color: #d081f1;
+  font-size: 10px;
+}
+.analysis-hand dl {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 6px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.analysis-hand dt {
+  color: #b9aebe;
+}
+.analysis-hand dd {
+  color: #edd3fb;
+}
+.analysis-focus {
+  padding-top: 10px;
+  border-top: 1px solid #3b09495c;
+}
+.analysis-focus strong {
+  color: #fbf5fe;
+}
+
+@media (max-width: 640px) {
+  .analysis {
+    padding: 14px;
+  }
+  .analysis-hand dl {
+    grid-template-columns: 1fr;
+  }
+}

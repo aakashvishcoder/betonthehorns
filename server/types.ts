@@ -1,3 +1,6 @@
+import type { HistoryHand } from "./history.js";
+import type { Style } from "./src/ai/style.ts";
+
 export const MODES = ["hands-up", "sng-4", "sng-6"] as const;
 export type GameMode = (typeof MODES)[number];
 
@@ -76,6 +79,26 @@ export type MatchState = {
   rngCounter: number;
   /** Bumped on every broadcast so a late device can ignore an older snapshot. */
   revision: number;
+  /** Ranked matches settle Elo; practice (vs AI) matches don't. */
+  ranked: boolean;
+  /** Finishing place per wallet (1 = winner), filled in as players bust. */
+  places: Record<string, number>;
+  /** Stacks at the start of the current hand, to order same-hand busts. */
+  handStartStacks: Record<string, number>;
+  /**
+   * Everything below lives in the match (saved as live_state) rather than in a server's memory,
+   * so any serverless instance can carry the game on.
+   */
+  /** Hand-by-hand record for post-game analysis and play-style stats. */
+  history?: HistoryHand[];
+  /** Practice: the mirrored style and skill the AI seats play with. */
+  ai?: { style: Style; skill: number };
+  /** When anything last happened at the table (AI seats wait a beat after it). */
+  lastActionAt?: number;
+  /** Per human: when they last acted themselves, and timeouts in a row since. */
+  away?: Record<string, { lastActed: number; timeouts: number }>;
+  /** Humans who were away too long; their chips leave the game at the end of the hand. */
+  forfeited?: string[];
 };
 
 export type ActionType = "fold" | "check" | "call" | "raise";

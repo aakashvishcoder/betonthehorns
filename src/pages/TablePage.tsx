@@ -17,6 +17,7 @@ import { cardArt, cardName, deckArt, formatChips } from "@/lib/poker-design";
 import { sendInbox, subscribeChannel } from "@/lib/realtime";
 import { shortAddress } from "@/lib/utils";
 import "@/styles/table.css";
+import AnalysisPanel from "@/components/analysis/AnalysisPanel";
 
 const HoloCard = lazy(() => import("@/components/react-bits/HoloCard"));
 
@@ -132,7 +133,11 @@ export default function TablePage() {
   function remember(next: PublicMatch, hole?: PrivateView | null) {
     if (matchRef.current?.status === "finished" && next.status !== "finished") return;
     const rev = next.revision ?? 0;
-    if (rev <= revision.current && next.status !== "finished") return;
+    // Each update arrives twice with the same revision: the public table copy (no hole cards)
+    // and your private copy. Never drop the private one just because the public one won the
+    // race, or your cards vanish until the next change.
+    if (rev < revision.current && next.status !== "finished") return;
+    if (rev === revision.current && !hole && next.status !== "finished") return;
     revision.current = Math.max(revision.current, rev);
     matchRef.current = next;
     setMatch(next);
@@ -402,15 +407,18 @@ export default function TablePage() {
               const mine = seat.walletId === address;
               const name = seat.name || (mine ? displayAddress ?? shortAddress(seat.walletId) : shortAddress(seat.walletId));
               const acting = match?.actionIndex === index;
+              // Your seat always shows your private cards, so the public copy of the table
+              // (face-down placeholders) can't swap them out mid-hand.
+              const holeCards = mine && myHole.length ? myHole : seat.hole;
               return (
                 <div key={seat.walletId}>
                   <div
                     className={`felt-seat ${mine ? "is-me" : ""} ${acting ? "is-acting" : ""} ${seat.folded || seat.busted ? "is-folded" : ""}`}
                     style={style}
                   >
-                    {!seat.folded && seat.hole && (
+                    {!seat.folded && holeCards && (
                       <div className="felt-seat-cards">
-                        {seat.hole.map((card, cardIndex) => (
+                        {holeCards.map((card, cardIndex) => (
                           <LiveCard
                             key={`${match?.handNumber ?? 0}-${seat.walletId}-${cardIndex}-${card}`}
                             code={card}
@@ -544,6 +552,9 @@ export default function TablePage() {
                 <p className="felt-result" aria-live="polite">
                   {match.ranked ? "Ranked game: Elo updates on your profile" : "Practice game: unranked"}
                 </p>
+                {match.players.some((p) => p.walletId === address) && (
+                  <AnalysisPanel kind="match" target={match.id} />
+                )}
                 <Link href="/play" className="club-button">
                   Back to dashboard
                 </Link>

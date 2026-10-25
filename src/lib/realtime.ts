@@ -114,16 +114,12 @@ export function watchGlobalQueue(
       onQueue({ mode, seats, count: wallets.length, wallets });
     });
   };
+  // Presence is the one source for the counter: every browser sees the same members. (The
+  // server's own "waiting" broadcasts could disagree, e.g. an instance not connected to Ably
+  // reporting 0, which made the counter flip between 0 and 1.)
   channel.presence.subscribe(fromPresence);
   fromPresence();
-  const listener = (message: Ably.Message) => {
-    onQueue(message.data as QueueSnapshot);
-  };
-  void channel.subscribe("waiting", listener).catch((error: Error) => {
-    console.warn("[ably] subscribe", `queue:${mode}`, error.message);
-  });
   return () => {
     channel.presence.unsubscribe(fromPresence);
-    channel.unsubscribe("waiting", listener);
   };
 }

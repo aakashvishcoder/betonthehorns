@@ -187,8 +187,95 @@
   max-width: 92%;
   font-size: 13px;
   line-height: 1.5;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.coach-message--user {
+  white-space: pre-wrap;
+}
+
+/* Formatted replies: paragraphs, lists, bold, code. */
+.coach-reply {
+  display: grid;
+  gap: 7px;
+}
+.coach-reply ul,
+.coach-reply ol {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+}
+.coach-reply ul {
+  list-style: disc;
+}
+.coach-reply ol {
+  list-style: decimal;
+}
+.coach-reply li::marker {
+  color: var(--coach-frame);
+}
+.coach-reply strong {
+  font-weight: 700;
+  color: var(--coach-muted);
+}
+.coach-reply code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #932db91a;
+  font-size: 12px;
+}
+.coach-heading {
+  font-weight: 700;
+  color: var(--coach-muted);
+}
+
+/* The typing cursor: a thin violet block that blinks at the end of the text. */
+.coach-cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.18em;
+  border-radius: 1px;
+  background: var(--coach-frame);
+  animation: coach-blink 1s steps(1) infinite;
+}
+@keyframes coach-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Shown when you've scrolled up while the coach is talking. */
+.coach-jump {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border: 1px solid var(--coach-frame);
+  border-radius: 999px;
+  background: var(--coach-stock);
+  color: var(--coach-violet);
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 6px 16px #3b094933;
+  transform: translateX(-50%);
+  animation: coach-deal 160ms ease-out;
+}
+.coach-jump:hover {
+  background: #f6e9fe;
+}
+
+.coach-header-actions {
+  display: flex;
+  gap: 4px;
+}
+.coach-close:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .coach-sources {
   display: block;

@@ -410,6 +410,10 @@ function showdown(match: MatchState) {
     const inPot = match.players.filter((player) => player.invested >= level);
     const potSize = (level - prev) * inPot.length;
     const contenders = inPot.filter((player) => !player.folded && player.hole);
+    if (potSize > 0 && contenders.length === 0) {
+      // Nobody left can win this layer (its only callers folded): return the uncalled chips.
+      for (const player of inPot) player.stack += level - prev;
+    }
     prev = level;
     if (potSize <= 0 || contenders.length === 0) continue;
 
@@ -585,6 +589,8 @@ export function publicMatch(match: MatchState, viewer?: string) {
     revealSeed: match.status === "finished" ? match.seed : null,
     chain: match.chain ?? [],
     revision: match.revision ?? 0,
+    ranked: match.ranked,
+    places: match.places,
     players: match.players.map((player) => {
       const mine = player.walletId === viewer;
       const show = Boolean(

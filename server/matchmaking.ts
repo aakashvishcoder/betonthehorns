@@ -38,6 +38,16 @@ import {
 } from "./engine.js";
 import { listQueuePresence, publish } from "./ably.js";
 import { getPool } from "./db.js";
+import { recordAction, saveHistory, syncHistory } from "./history.js";
+import {
+  aiToAct,
+  decideAi,
+  finishTracking,
+  practiceSeats,
+  refundPracticeGame,
+  takePracticeGame,
+} from "./practice.js";
+import { claimFinalize, releaseSeats, reserveSeats, seatedAt } from "./seats.js";
 import { seatLabel } from "./names.js";
 import { MODE_SEATS, MODES, type ActionInput, type GameMode, type MatchState } from "./types.js";
 
@@ -79,28 +89,31 @@ function isFresh(match: MatchState) {
   return Date.now() - match.startedAt < LIVE_MS;
 }
 
+/** How long a player can be away (turns timing out) before they forfeit. */
+export const AWAY_MS = 5 * 60 * 1000;
+
+function awayOf(match: MatchState, walletId: string) {
+  match.away ??= {};
+  return (match.away[walletId] ??= { lastActed: match.startedAt, timeouts: 0 });
+}
+
+/** Call whenever a human acts themselves: they're back, the timeout streak resets. */
+function markActed(match: MatchState, walletId: string) {
+  const away = awayOf(match, walletId);
+  away.lastActed = Date.now();
+  away.timeouts = 0;
+}
+
+/**
+ * Over: too old, or every human still in it has been away longer than AWAY_MS (nobody is left
+ * to keep the table moving). One player being away just times out until they forfeit.
+ */
 function isAbandoned(match: MatchState) {
   if (match.status !== "playing" || !isFresh(match)) return true;
+  const humans = match.players.filter((p) => !p.bot && !p.busted && !match.forfeited?.includes(p.walletId));
+  if (humans.length === 0) return true;
   const now = Date.now();
-  if (match.runoutAt && now < match.runoutAt + ABANDON_GRACE_MS) return false;
-  if (
-    match.street === "showdown" &&
-    match.showdownAt &&
-    now < match.showdownAt + SHOWDOWN_MS + ABANDON_GRACE_MS
-  ) {
-    return false;
-  }
-  if (match.actionDeadline && now < match.actionDeadline + ABANDON_GRACE_MS) return false;
-  if (match.actionDeadline && now >= match.actionDeadline + ABANDON_GRACE_MS) return true;
-  if (
-    match.street === "showdown" &&
-    match.showdownAt &&
-    now >= match.showdownAt + SHOWDOWN_MS + ABANDON_GRACE_MS
-  ) {
-    return true;
-  }
-  if (match.runoutAt && now >= match.runoutAt + ABANDON_GRACE_MS) return true;
-  return false;
+  return humans.every((p) => now - awayOf(match, p.walletId).lastActed > AWAY_MS + ABANDON_GRACE_MS);
 }
 
 function dueStep(match: MatchState) {
@@ -130,12 +143,28 @@ function applyDueStep(match: MatchState) {
     }
   }
   if (step === "showdown") {
+    // Forfeited players' chips leave the game between hands, so they bust out here.
+    for (const player of match.players) {
+      if (match.forfeited?.includes(player.walletId) && !player.busted) player.stack = 0;
+    }
     continueAfterShowdown(match);
     return true;
   }
   if (step === "timeout") {
     try {
+      const actor = match.players[match.actionIndex!]!;
+      const input = { type: match.currentBet - actor.bet > 0 ? "fold" : "check" } as const;
+      recordAction(match, actor.walletId, input);
+      if (!actor.bot) {
+        const away = awayOf(match, actor.walletId);
+        away.timeouts += 1;
+        if (away.timeouts >= 2 && Date.now() - away.lastActed > AWAY_MS && !match.forfeited?.includes(actor.walletId)) {
+          (match.forfeited ??= []).push(actor.walletId);
+          match.log.push(`${seatLabel(actor.walletId)} was away too long and forfeits`);
+        }
+      }
       timeoutAct(match);
+      match.lastActionAt = Date.now();
       return true;
     } catch (error) {
       console.warn("[engine] timeout", error);
@@ -158,6 +187,7 @@ async function takeLiveMatch(id: string) {
 async function closeLeftover(id: string) {
   matches.delete(id);
   chats.delete(id);
+  await releaseSeats(id).catch((error) => console.warn("[seats] release", (error as Error).message));
   const settled = await matchAlreadySettled(id);
   if (!settled) {
     await refundMatchLocks(id).catch((error) =>
@@ -184,7 +214,7 @@ export async function hydrateLiveMatches() {
 }
 
 export async function walletMatch(walletId: string) {
-  const id = byWallet.get(walletId) ?? (await findPlayingMatchId(walletId));
+  const id = (await seatedAt(walletId)) ?? byWallet.get(walletId) ?? (await findPlayingMatchId(walletId));
   if (!id) return undefined;
   const live = await takeLiveMatch(id);
   if (live?.status === "playing") return live;
@@ -217,7 +247,8 @@ export async function getMatchView(id: string, walletId?: string) {
     };
   }
   const live = (await advanceMatch(id)) ?? matches.get(id);
-  if (live && live.status === "playing") {
+  // Includes the poll whose step just finished the game: show that, not the older snapshot.
+  if (live && (live.status === "playing" || live.revision >= ((row?.snapshot as { revision?: number } | null)?.revision ?? 0))) {
     return {
       match: publicMatch(live, walletId),
       you: walletId ? privateView(live, walletId) : null,
@@ -322,8 +353,14 @@ async function abandonOpenMatch(walletId: string) {
   }
 }
 
+/** Thrown when someone with a live game tries to queue or start practice: send them back to it. */
+function alreadyPlaying(matchId: string) {
+  return Object.assign(new Error("You're already in a game. Returning you to your table."), { status: 409, matchId });
+}
+
 async function joinQueueOnce(walletId: string, mode: GameMode) {
-  await abandonOpenMatch(walletId);
+  const current = await walletMatch(walletId);
+  if (current) throw alreadyPlaying(current.id);
   byWallet.delete(walletId);
   const leftover = await findPlayingMatchId(walletId);
   if (leftover) await closeLeftover(leftover);
@@ -394,6 +431,14 @@ async function tryMatch(mode: GameMode, pinned: string[] = []) {
     walletIds = taken.map((seat) => seat.walletId);
   }
   const match = createMatch(mode, walletIds);
+  // The database decides: if any of them got seated elsewhere meanwhile, put the rest back.
+  const seats = await reserveSeats(match.id, walletIds);
+  if (!seats.ok) {
+    const free = walletIds.filter((id) => !seats.busy.includes(id));
+    if (dbReady) await restoreQueueSeats(mode, free);
+    else queueOf(mode).unshift(...free.map((walletId) => ({ walletId, joinedAt: Date.now() })));
+    return null;
+  }
   rememberMatch(match);
   chats.set(match.id, []);
 
@@ -436,6 +481,7 @@ async function tryMatch(mode: GameMode, pinned: string[] = []) {
     matches.delete(match.id);
     chats.delete(match.id);
     for (const walletId of wallets) byWallet.delete(walletId);
+    await releaseSeats(match.id).catch(() => undefined);
     if (dbReady) await restoreQueueSeats(mode, walletIds);
     else queueOf(mode).unshift(...walletIds.map((walletId) => ({ walletId, joinedAt: Date.now() })));
     console.warn("[elo] lock", (error as Error).message);
@@ -463,30 +509,51 @@ async function tryMatch(mode: GameMode, pinned: string[] = []) {
 
 /** Practice vs AI: an unranked table right away, AI personas in the other seats. */
 export async function startPractice(walletId: string, mode: GameMode) {
-  const existing = walletMatch(walletId);
-  if (existing && existing.status === "playing") return { matchId: existing.id };
-  if (existing) byWallet.delete(walletId);
+  const existing = await walletMatch(walletId);
+  if (existing) return { matchId: existing.id };
   if (!takePracticeGame(walletId)) {
     throw Object.assign(new Error("You've played today's AI practice games. Come back tomorrow!"), { status: 429 });
   }
   try {
+    if (dbReady) await removeQueuedWallet(walletId);
     leaveAllQueues(walletId);
     const elo = (await currentElos([walletId], mode).catch(() => new Map<string, number>())).get(walletId) ?? STARTING_ELO;
-    const { ids, players } = await practiceSeats(walletId, mode, MODE_SEATS[mode], elo);
+    const { ids, ai } = await practiceSeats(walletId, mode, MODE_SEATS[mode], elo);
     const match = createMatch(mode, [walletId], ids, { ranked: false });
-    matches.set(match.id, match);
+    match.ai = ai;
+    match.lastActionAt = Date.now();
+    const seats = await reserveSeats(match.id, [walletId]);
+    if (!seats.ok) {
+      refundPracticeGame(walletId);
+      const live = await walletMatch(walletId);
+      if (live) return { matchId: live.id };
+      throw Object.assign(new Error("Couldn't start practice. Try again."), { status: 409 });
+    }
+    rememberMatch(match);
     chats.set(match.id, []);
-    byWallet.set(walletId, match.id);
-    registerPractice(match, players);
     await insertMatch(match.id, match.mode, publicMatch(match), match.commitHash).catch((error) =>
       console.warn("[db] persist practice", (error as Error).message),
     );
+    await insertMatchPlayers(
+      match.id,
+      match.players.map((player) => ({ walletId: player.walletId, seat: player.seat, bot: player.bot })),
+    ).catch((error) => console.warn("[db] practice players", (error as Error).message));
     await broadcastMatch(match, "matched");
     return { matchId: match.id };
   } catch (error) {
     refundPracticeGame(walletId);
     throw error;
   }
+}
+
+/** End-of-game work, once per match across instances: Elo, hand history, style data, seats. */
+async function finalizeOnce(match: MatchState) {
+  if (!(await claimFinalize(match.id).catch(() => false))) return;
+  await releaseSeats(match.id).catch((error) => console.warn("[seats] release", (error as Error).message));
+  for (const player of match.players) if (byWallet.get(player.walletId) === match.id) byWallet.delete(player.walletId);
+  void import("./settle.js").then(({ settleMatch }) => settleMatch(match));
+  await saveHistory(match);
+  void finishTracking(match);
 }
 
 async function publishQueue(mode: GameMode) {
@@ -504,9 +571,7 @@ async function fanoutMatch(match: MatchState, name = "state") {
       you: privateView(match, player.walletId),
     });
   }
-  if (match.status === "finished") {
-    void import("./settle.js").then(({ settleMatch }) => settleMatch(match));
-  }
+  if (match.status === "finished") void finalizeOnce(match);
   void saveMatchSnapshot(
     match.id,
     match.status,
@@ -516,6 +581,7 @@ async function fanoutMatch(match: MatchState, name = "state") {
 }
 
 export async function broadcastMatch(match: MatchState, name = "state") {
+  syncHistory(match);
   match.revision += 1;
   void saveLiveMatch(match.id, match).catch((error) =>
     console.warn("[db] live", (error as Error).message),
@@ -523,7 +589,48 @@ export async function broadcastMatch(match: MatchState, name = "state") {
   await fanoutMatch(match, name);
 }
 
-async function advanceMatch(id: string) {
+const thinking = new Set<string>();
+
+/** If an AI seat is due to act, decide its move (outside any lock: Cortex can take seconds). */
+async function planAi(match: unknown) {
+  if (!isLiveMatch(match)) return null;
+  const walletId = aiToAct(match);
+  if (!walletId) return null;
+  const key = `${match.id}:${match.revision}`;
+  if (thinking.has(key)) return null;
+  thinking.add(key);
+  try {
+    return { revision: match.revision, walletId, input: await decideAi(match, walletId) };
+  } catch (error) {
+    console.warn("[ai] decide", (error as Error).message);
+    return null;
+  } finally {
+    setTimeout(() => thinking.delete(key), 30_000).unref();
+  }
+}
+
+type Move = { walletId: string; input: ActionInput };
+
+/** Applies one move (human or AI) to the match, recording it for history and away tracking. */
+function applyMove(match: MatchState, { walletId, input }: Move) {
+  recordAction(match, walletId, input);
+  try {
+    applyAction(match, walletId, input);
+  } catch (error) {
+    match.history?.at(-1)?.actions.pop();
+    throw error;
+  }
+  const player = match.players.find((p) => p.walletId === walletId);
+  if (player && !player.bot) markActed(match, walletId);
+  match.lastActionAt = Date.now();
+}
+
+/**
+ * Brings a live match up to date under a row lock: the given move (a player's action), a due AI
+ * move, then any due timeout / run-out / showdown step. Every change to a live table goes
+ * through here, so two serverless instances can never overwrite each other's moves.
+ */
+async function advanceMatch(id: string, move?: Move) {
   if (!dbReady) {
     const match = matches.get(id);
     if (!match || match.status !== "playing") return match;
@@ -531,9 +638,24 @@ async function advanceMatch(id: string) {
       await abandonOpenMatch(match.players.find((player) => !player.bot)?.walletId ?? "");
       return undefined;
     }
-    if (applyDueStep(match)) await broadcastMatch(match);
+    let changed = false;
+    if (move) {
+      applyMove(match, move);
+      changed = true;
+    } else {
+      const plan = await planAi(match);
+      if (plan && plan.revision === match.revision && match.players[match.actionIndex ?? -1]?.walletId === plan.walletId) {
+        applyMove(match, plan);
+        changed = true;
+      }
+    }
+    if (applyDueStep(match)) changed = true;
+    if (changed) await broadcastMatch(match);
     return match;
   }
+
+  // Practice tables: peek first so an AI move can be decided before taking the lock.
+  const plan = !move && matches.get(id)?.ai ? await planAi(await loadLiveMatchRow(id)) : null;
 
   const client = await getPool().connect();
   let changed = false;
@@ -556,21 +678,34 @@ async function advanceMatch(id: string) {
       return undefined;
     }
     match = row;
-    if (applyDueStep(match)) {
+    if (move) {
+      applyMove(match, move); // throws (and rolls back) on an illegal move
+      changed = true;
+    } else if (plan && plan.revision === match.revision && match.players[match.actionIndex ?? -1]?.walletId === plan.walletId) {
+      try {
+        applyMove(match, plan);
+        changed = true;
+      } catch (error) {
+        console.warn("[ai] move", (error as Error).message);
+      }
+    }
+    if (applyDueStep(match)) changed = true;
+    if (changed) {
+      syncHistory(match);
       match.revision = (match.revision ?? 0) + 1;
       await client.query(
         `UPDATE matches
-         SET live_state = CASE WHEN $3 = 'finished' THEN NULL ELSE $2 END,
+         SET live_state = CASE WHEN $3 = 'finished' THEN NULL ELSE $2::jsonb END,
              status = CASE WHEN $3 = 'finished' THEN 'finished' ELSE status END,
              finished_at = CASE WHEN $3 = 'finished' THEN COALESCE(finished_at, NOW()) ELSE finished_at END
          WHERE id = $1`,
         [id, match, match.status],
       );
-      changed = true;
     }
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (move) throw error;
     console.warn("[table] advance", (error as Error).message);
     return takeLiveMatch(id);
   } finally {
@@ -581,7 +716,7 @@ async function advanceMatch(id: string) {
   rememberMatch(match);
   if (!chats.has(id)) chats.set(id, await loadChat(id));
   if (changed) await fanoutMatch(match);
-  return match.status === "playing" ? match : undefined;
+  return match;
 }
 
 export async function playAction(
@@ -591,13 +726,12 @@ export async function playAction(
 ) {
   const row = await loadMatchView(matchId);
   if (row?.status === "finished") throw new Error("Match is over");
-  const match = (await advanceMatch(matchId)) ?? (await takeLiveMatch(matchId));
-  if (!match || match.status !== "playing") throw new Error("Match is over");
-  applyAction(match, walletId, input);
+  if (!dbReady && !matches.has(matchId)) await takeLiveMatch(matchId);
+  const match = await advanceMatch(matchId, { walletId, input });
+  if (!match) throw new Error("Match is over");
   await logMatchEvent(match.id, input.type, walletId, input).catch((error) =>
     console.warn("[db] event", (error as Error).message),
   );
-  await broadcastMatch(match);
   return { match: publicMatch(match, walletId), you: privateView(match, walletId) };
 }
 

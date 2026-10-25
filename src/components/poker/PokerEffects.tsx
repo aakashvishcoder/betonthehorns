@@ -123,7 +123,13 @@ function CardFallback({ rank, suit }: { rank: string; suit: string }) {
   );
 }
 
-/** A single, quiet visual field shared by all sections of the page. */
+const ribbonShifts = [
+  { rotationDeg: -8, xOffset: -40 },
+  { rotationDeg: 16, xOffset: 80 },
+  { rotationDeg: -12, xOffset: 10 },
+];
+
+/** Neon ribbons stacked down the page, so the light continues past the hero. */
 export function PokerAtmosphere({ paused }: { paused: boolean }) {
   const [gpuAvailable, setGpuAvailable] = useState(false);
   const [graphicsFailed, setGraphicsFailed] = useState(false);
@@ -141,26 +147,32 @@ export function PokerAtmosphere({ paused }: { paused: boolean }) {
       style={{ pointerEvents: "none" }}
     >
       <div className="world-light-ribbon">
-        <DeferredEffect fallback={<div className="plasma-static-light" />}>
-          <PlasmaWave
-            colors={["#932db9", "#c73757"]}
-            speed={0.22}
-            bend1={0.9}
-            bend2={0.5}
-            thickness={0.23}
-            brightness={0.45}
-            glow={0.35}
-            core={0.15}
-            quality={0.45}
-            dpr={1}
-            fade={0.5}
-            grain={0.015}
-            opacity={0.75}
-            intro={!paused}
-            mouseInteraction={false}
-            paused={paused}
-          />
-        </DeferredEffect>
+        {ribbonShifts.map((shift, index) => (
+          <div className="world-light-band" key={index}>
+            <DeferredEffect fallback={<div className="plasma-static-light" />}>
+              <PlasmaWave
+                colors={["#932db9", "#c73757"]}
+                speed={0.22}
+                bend1={0.9}
+                bend2={0.5}
+                thickness={0.23}
+                brightness={0.48}
+                glow={0.38}
+                core={0.16}
+                quality={0.4}
+                dpr={1}
+                fade={0.2}
+                grain={0.015}
+                opacity={0.85}
+                rotationDeg={shift.rotationDeg}
+                xOffset={shift.xOffset}
+                intro={!paused && index === 0}
+                mouseInteraction={false}
+                paused={paused}
+              />
+            </DeferredEffect>
+          </div>
+        ))}
       </div>
       <div className="world-card-shards">
         {useGraphics ? (

@@ -11,6 +11,7 @@ import { AuthProvider } from "@/lib/auth";
 import { isGameModeId } from "@/lib/game-modes";
 import Home from "./pages/Home";
 import CoachWidget from "@/components/coach/CoachWidget";
+import LatticeLoader from "@/components/react-bits/LatticeLoader";
 
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const PlayPage = lazy(() => import("./pages/PlayPage"));
@@ -38,8 +39,15 @@ export default function App() {
               <Toaster />
               <Suspense
                 fallback={
-                  <div className="club-loading" role="status">
-                    Dealing the next page…
+                  <div className="club-loading">
+                    <LatticeLoader
+                      label="Dealing"
+                      color="#e1b0f7"
+                      glow
+                      glowColor="#932db9"
+                      pattern="spiral"
+                      showTimer={false}
+                    />
                   </div>
                 }
               >

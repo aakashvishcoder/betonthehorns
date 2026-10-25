@@ -89,3 +89,19 @@ test("cards dealt within a hand are all different", () => {
     }
   }
 });
+
+test("uncalled chips above every all-in go back to the player who folded", () => {
+  // Three short stacks all in for 7, then the big blind (10 in) folds: the 3 nobody could call come back.
+  const match = createMatch("sng-4", ["w0", "w1", "w2", "w3"]);
+  for (const p of match.players) Object.assign(p, { stack: 0, bet: 0, invested: 7, allIn: true, folded: false });
+  const bb = match.players[2]!;
+  Object.assign(bb, { stack: 3969, invested: 10, allIn: false, folded: true });
+  match.pot = 31;
+  match.street = "river";
+  const before = match.players.reduce((s, p) => s + p.stack, 0) + match.pot;
+  match.runoutQueue = [];
+  match.runoutAt = 1;
+  stepRunout(match); // empty queue: straight to showdown
+  assert.equal(match.players.reduce((s, p) => s + p.stack, 0), before);
+  assert.equal(bb.stack, 3972);
+});

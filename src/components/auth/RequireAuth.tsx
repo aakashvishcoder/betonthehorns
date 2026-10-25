@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useLocation } from "wouter";
+import LatticeLoader from "@/components/react-bits/LatticeLoader";
 import { useAuth } from "@/lib/auth";
 import { walletToast } from "@/lib/wallet-toast";
 
@@ -18,8 +19,15 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
 
   if (!isAuthenticated) {
     return (
-      <div className="club-loading" role="status">
-        Checking your wallet…
+      <div className="club-loading">
+        <LatticeLoader
+          label="Checking your wallet"
+          color="#e1b0f7"
+          glow
+          glowColor="#932db9"
+          pattern="orbit"
+          showTimer={false}
+        />
       </div>
     );
   }

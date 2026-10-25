@@ -157,6 +157,17 @@ export type PuzzleResult = {
   solution: PuzzleSolution;
 };
 
+export type AnalysisKind = "match" | "puzzles";
+export type Analysis = {
+  grade: string;
+  headline: string;
+  summary: string;
+  strengths: string[];
+  leaks: string[];
+  keyHands: { ref: string; title: string; youDid: string; better: string; why: string }[];
+  focus: string;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
@@ -171,12 +182,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     window.dispatchEvent(new Event(SESSION_EXPIRED));
   }
   if (!response.ok) {
-    throw new Error(data.error || response.statusText);
+    throw Object.assign(new Error(data.error || response.statusText), { status: response.status, body: data });
   }
   return data;
 }
 
 export const api = {
+  savedAnalysis: (kind: AnalysisKind, ref: string) =>
+    request<{ analysis: Analysis | null }>(`/api/analysis/${kind}/${ref}`),
+  runAnalysis: (kind: AnalysisKind, ref: string) =>
+    request<{ analysis: Analysis }>(`/api/analysis/${kind}/${ref}`, { method: "POST" }),
   puzzlesToday: () =>
     request<{ day: string; puzzles: Puzzle[]; attempts: PuzzleResult[]; streak: number }>("/api/puzzles/today"),
   answerPuzzle: (day: string, index: number, choice: PuzzleChoice) =>
@@ -191,10 +206,10 @@ export const api = {
   health: () => request<{ ok: boolean; db: boolean }>("/api/health"),
   authChallenge: (walletId: string) =>
     request<{ nonce: string; message: string }>(`/api/auth/challenge/${walletId}`),
-  login: (walletId: string, signature: string) =>
+  login: (walletId: string, signature: string, nonce: string) =>
     request<{ walletId: string; token: string; expires: number }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ walletId, signature }),
+      body: JSON.stringify({ walletId, signature, nonce }),
     }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   wallet: (walletId: string) =>

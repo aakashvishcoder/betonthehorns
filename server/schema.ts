@@ -226,8 +226,11 @@ export async function keepQueueSeats(mode: GameMode, keep: string[]) {
 
 export async function playingWalletIds() {
   if (!dbReady) return new Set<string>();
+  // wallet_games (seats.ts) covers practice tables too, and is written before match_players.
   const result = await query<{ wallet_id: string }>(
-    `SELECT p.wallet_id
+    `SELECT wallet_id FROM wallet_games
+     UNION
+     SELECT p.wallet_id
      FROM match_players p
      JOIN matches m ON m.id = p.match_id
      WHERE m.status = 'playing'`,
@@ -684,7 +687,7 @@ export async function saveLiveMatch(id: string, live: unknown) {
       : "playing";
   await query(
     `UPDATE matches
-     SET live_state = CASE WHEN $3 = 'finished' THEN NULL ELSE $2 END,
+     SET live_state = CASE WHEN $3 = 'finished' THEN NULL ELSE $2::jsonb END,
          status = CASE WHEN $3 = 'finished' THEN 'finished' ELSE status END,
          finished_at = CASE WHEN $3 = 'finished' THEN COALESCE(finished_at, NOW()) ELSE finished_at END
      WHERE id = $1
@@ -779,11 +782,14 @@ export async function closeLiveMatch(matchId: string) {
 export async function findPlayingMatchId(walletId: string) {
   if (!dbReady) return null;
   const result = await query<{ id: string }>(
-    `SELECT m.id
-     FROM matches m
-     JOIN match_players p ON p.match_id = m.id
-     WHERE p.wallet_id = $1 AND m.status = 'playing'
-     ORDER BY m.started_at DESC
+    `SELECT match_id AS id FROM wallet_games WHERE wallet_id = $1
+     UNION ALL
+     (SELECT m.id
+      FROM matches m
+      JOIN match_players p ON p.match_id = m.id
+      WHERE p.wallet_id = $1 AND m.status = 'playing'
+      ORDER BY m.started_at DESC
+      LIMIT 1)
      LIMIT 1`,
     [walletId],
   );

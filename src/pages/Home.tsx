@@ -15,6 +15,8 @@ import { Brand, Chip, TablePreview } from "@/components/poker/PokerVisuals";
 import NewsTicker from "@/components/poker/NewsTicker";
 import { useAuth } from "@/lib/auth";
 import SmoothScroll from "@/components/poker/SmoothScroll";
+import ScrollReveal from "@/components/react-bits/ScrollReveal";
+import ScrollVelocity from "@/components/react-bits/ScrollVelocity";
 import {
   PokerAtmosphere,
   PokerHeroScene,
@@ -211,14 +213,27 @@ export default function Home() {
             </a>
           </section>
           <div className="suit-marquee" aria-hidden="true">
-            <div className="marquee-track">
-              {Array.from({ length: 4 }, (_, index) => (
-                <span key={index}>
-                  <b>♠</b> HANDS UP <b>♥</b> SNG 4 <b>♣</b> SNG 6
-                  <b>♦</b> ELO ESCROW{" "}
-                </span>
-              ))}
-            </div>
+            <ScrollVelocity
+              texts={[
+                <span key="modes">
+                  <b>♠</b> HANDS UP <b>♥</b> SNG 4 <b>♣</b> SNG 6 <b>♦</b> ELO
+                  ESCROW
+                </span>,
+                <span key="house">
+                  RANKED HOLD’EM <b>♠</b> SOLANA <b>♥</b> RANK dNFTS <b>♦</b>{" "}
+                  PUBLIC TABLES
+                </span>,
+              ]}
+              velocity={34}
+              fontSize={15}
+              fontWeight={600}
+              color="#f4e9fb"
+              skewWithVelocity={7}
+              fadeEdges
+              outlineAlternate
+              gap={40}
+              numCopies={8}
+            />
           </div>
           <NewsTicker />
           <section
@@ -338,15 +353,24 @@ export default function Home() {
               </button>
             </div>
           </section>
-        </div>
         <section className="manifesto-section">
           <div className="manifesto-inner page-width">
             <span className="eyebrow">HOUSE RULE</span>
-            <motion.p {...enter}>
+            <ScrollReveal
+              containerClassName="manifesto-reveal"
+              mode="scrub"
+              effect="rise"
+              enableBlur
+              blurStrength={7}
+              baseOpacity={0.08}
+              baseRotation={1.5}
+              baseOffset={28}
+              stagger={0}
+            >
               Play the hand.
               <br />
               <span>Stake the horns.</span>
-            </motion.p>
+            </ScrollReveal>
             <div className="manifesto-bottom">
               <span className="manifesto-suits">
                 ♠ <i>♥</i> ♣ <i>♦</i>
@@ -423,6 +447,7 @@ export default function Home() {
             </span>
           </div>
         </section>
+        </div>
       </main>
       <footer className="site-footer page-width">
         <Brand />
