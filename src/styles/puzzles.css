@@ -1,0 +1,242 @@
+.puzzles-page {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  padding: 34px 0 56px;
+  display: grid;
+  gap: 18px;
+}
+.puzzles-page .club-page-heading h1 {
+  letter-spacing: -2.5px;
+}
+.puzzles-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  color: #c7b5d1;
+  font-size: 12px;
+}
+.puzzles-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.puzzles-stats strong {
+  color: #fbf5fe;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.puzzles-dots {
+  display: flex;
+  gap: 8px;
+}
+.puzzles-dot {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid #6f20885c;
+  background: #151018;
+  color: #c7b5d1;
+  font-size: 12px;
+  cursor: pointer;
+}
+.puzzles-dot.is-current {
+  border-color: #d081f1;
+  color: #fbf5fe;
+}
+.puzzles-dot.is-right {
+  background: #6f2088;
+  color: #fbf5fe;
+}
+.puzzles-dot.is-wrong {
+  background: #79223d;
+  color: #fbf5fe;
+}
+
+.puzzles-panel {
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+}
+.puzzles-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.puzzles-meta .club-pill {
+  text-transform: uppercase;
+}
+.puzzles-meta h2 {
+  flex-basis: 100%;
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+.puzzles-felt {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 28px 16px 20px;
+  border-radius: 999px / 160px;
+  border: 10px solid #120910;
+  background: radial-gradient(ellipse at 50% 38%, #8a35aa 0%, #5a1874 40%, #3a0d4e 75%, #1c071f 100%);
+  box-shadow:
+    0 0 0 2px #f0d7fb,
+    0 0 0 6px #6f2088,
+    inset 0 18px 40px #00000040;
+}
+.puzzles-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.puzzles-card {
+  width: clamp(48px, 11vw, 78px);
+  aspect-ratio: 420 / 732;
+  border-radius: 8px;
+  object-fit: cover;
+  filter: drop-shadow(0 8px 8px #00000073);
+}
+.puzzles-row--hero .puzzles-card {
+  width: clamp(64px, 15vw, 100px);
+}
+.puzzles-pot,
+.puzzles-stack {
+  color: #f4eef8cc;
+  font-size: 12px;
+}
+.puzzles-pot strong {
+  color: #fbf5fe;
+}
+
+.puzzles-situation {
+  color: #edd3fb;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.puzzles-assumption {
+  color: #b9aebe;
+  font-size: 12px;
+}
+
+.puzzles-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.puzzles-options .club-button {
+  flex: 1 1 140px;
+  font-size: 13px;
+}
+.puzzles-options .club-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.puzzles-options .club-button.is-right {
+  opacity: 1;
+  border-color: #d081f1;
+  background: #6f2088;
+}
+.puzzles-options .club-button.is-wrong {
+  opacity: 1;
+  border-color: #dc576f;
+  background: #79223d;
+}
+
+.puzzles-reveal {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid #6f208852;
+  background: #3b094933;
+}
+.puzzles-reveal.is-wrong {
+  border-color: #8c254252;
+  background: #430e1d40;
+}
+.puzzles-reveal h3 {
+  font-size: 18px;
+}
+.puzzles-reveal p {
+  color: #edd3fb;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.puzzles-reveal dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.puzzles-reveal dl div {
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #151018;
+}
+.puzzles-reveal dt {
+  color: #b9aebe;
+  font-size: 11px;
+}
+.puzzles-reveal dd {
+  color: #fbf5fe;
+  font-size: 15px;
+  font-weight: 600;
+}
+.puzzles-reveal .club-button {
+  justify-self: start;
+}
+
+.puzzles-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+}
+.puzzles-summary h2 {
+  font-size: 26px;
+}
+.puzzles-summary .club-button {
+  justify-self: start;
+}
+.puzzles-share {
+  font-family: inherit;
+  font-size: 13px;
+  color: #edd3fb;
+  white-space: pre-wrap;
+}
+.puzzles-board {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  color: #c7b5d1;
+  font-size: 13px;
+}
+.puzzles-board li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #151018;
+}
+.puzzles-board li.is-me {
+  border: 1px solid #8625a6;
+}
+.puzzles-board strong {
+  color: #fbf5fe;
+}
+
+@media (max-width: 640px) {
+  .puzzles-page {
+    padding: 22px 0 40px;
+  }
+  .puzzles-panel {
+    padding: 16px;
+  }
+  .puzzles-felt {
+    border-width: 6px;
+    border-radius: 28px;
+  }
+}

@@ -17,6 +17,7 @@ const PlayPage = lazy(() => import("./pages/PlayPage"));
 const QueuePage = lazy(() => import("./pages/QueuePage"));
 const TablePage = lazy(() => import("./pages/TablePage"));
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
+const PuzzlesPage = lazy(() => import("./pages/PuzzlesPage"));
 
 function Protected({ children }: { children: ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -52,6 +53,9 @@ export default function App() {
                   </Route>
                   <Route path="/leaderboard">
                     <LeaderboardPage />
+                  </Route>
+                  <Route path="/puzzles">
+                    <PuzzlesPage />
                   </Route>
                   <Route path="/play">
                     <Protected>
