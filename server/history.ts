@@ -30,7 +30,15 @@ export type HistoryHand = {
   shown: string[];
   winners: { player: string; amount: number; hand?: string }[];
 };
-export type MatchHistory = { matchId: string; mode: string; players: string[]; places: Record<string, number>; hands: HistoryHand[] };
+export type MatchHistory = {
+  matchId: string;
+  mode: string;
+  /** False for practice vs AI. Missing on histories saved before practice was recorded. */
+  ranked?: boolean;
+  players: string[];
+  places: Record<string, number>;
+  hands: HistoryHand[];
+};
 
 const live = new Map<string, HistoryHand[]>();
 
@@ -85,15 +93,16 @@ export function syncHistory(match: MatchState) {
   }
 }
 
-/** When a match ends: save its history (ranked matches only) and drop it from memory. */
+/** When a match ends: save its history (ranked and practice) and drop it from memory. */
 export async function saveHistory(match: MatchState) {
   syncHistory(match);
   const hands = live.get(match.id) ?? [];
   live.delete(match.id);
-  if (!match.ranked || !dbReady || hands.length === 0) return;
+  if (!dbReady || hands.length === 0) return;
   const history: MatchHistory = {
     matchId: match.id,
     mode: match.mode,
+    ranked: match.ranked,
     players: match.players.map((p) => p.walletId),
     places: match.places,
     hands,

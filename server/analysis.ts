@@ -4,12 +4,13 @@ import { loadHistory, viewFor, type HistoryHand, type MatchHistory } from "./his
 import { dailyPuzzles } from "./puzzles.js";
 import { attemptsFor } from "./puzzle-store.js";
 import { evaluate } from "./poker.js";
+import { seatLabel } from "./names.js";
 import { cortexJson, snowflakeAuthFromEnv } from "./src/ai/cortex.ts";
 import type { Card } from "./types.js";
 
 /**
  * Post-game analysis by Claude Sonnet 4.5 on Snowflake Cortex, on request:
- * - ranked matches: grade, strengths, leaks and the 3 most important hands, from the hand history
+ * - ranked and practice (vs AI) matches: grade, strengths, leaks and the 3 most important hands, from the hand history
  *   (only cards the player could see)
  * - a finished day of puzzles: what the five answers say about the player's game
  * Private to the player, saved so re-opening is free, and capped per wallet per day.
@@ -148,7 +149,7 @@ const MAX_HANDS = 40;
 
 async function matchPrompt(walletId: string, matchId: string) {
   const full = await loadHistory(matchId);
-  if (!full) throw new AnalysisError("No hand history for this game (only ranked games played after this update).", 404);
+  if (!full) throw new AnalysisError("No hand history for this game (only games played after this update).", 404);
   if (!full.players.includes(walletId)) throw new AnalysisError("You weren't in this game.", 403);
   return describeMatch(viewFor(full, walletId), walletId);
 }
@@ -162,6 +163,9 @@ export function describeMatch(history: MatchHistory, me: string) {
     ? [...mine].sort((a, b) => potOf(b) - potOf(a)).slice(0, MAX_HANDS).sort((a, b) => a.hand - b.hand)
     : mine;
   const lines = [
+    history.ranked === false
+      ? `Practice game against AI bots (${history.players.filter((p) => p !== me).map((p) => `${name(p)} = ${seatLabel(p)}`).join(", ")}), unranked.`
+      : "Ranked game against human players.",
     `Game: ${history.mode}, ${history.players.length} players. You finished place ${history.places[me] ?? "?"} of ${history.players.length}.`,
     `Hands played: ${history.hands.length}${picked.length < mine.length ? ` (showing the ${picked.length} biggest you played)` : ""}.`,
     "",

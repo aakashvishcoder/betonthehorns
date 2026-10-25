@@ -503,7 +503,7 @@ export default function TablePage() {
                 <p className="felt-result" aria-live="polite">
                   {match.ranked ? "Ranked game: Elo updates on your profile" : "Practice game: unranked"}
                 </p>
-                {match.ranked && match.players.some((p) => p.walletId === address) && (
+                {match.players.some((p) => p.walletId === address) && (
                   <AnalysisPanel kind="match" target={match.id} />
                 )}
                 <Link href="/play" className="club-button">
