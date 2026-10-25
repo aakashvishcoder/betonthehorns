@@ -11,6 +11,7 @@ import {
   type PublicMatch,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useBlockCoach } from "@/components/coach/coachGate";
 import { getGameMode, isGameModeId } from "@/lib/game-modes";
 import { cardArt, cardName, deckArt, formatChips } from "@/lib/poker-design";
 import { subscribeChannel } from "@/lib/realtime";
@@ -171,6 +172,10 @@ export default function TablePage() {
       stopChat();
     };
   }, [address, matchId]);
+
+  // The AI coach is off (face-down) at ranked tables, and allowed in practice vs AI.
+  useBlockCoach(match?.ranked !== false);
+  const myElo = match?.elo?.find((change) => change.walletId === address) ?? null;
 
   const mode = getGameMode(
     match && isGameModeId(match.mode) ? match.mode : "hands-up",
@@ -495,6 +500,15 @@ export default function TablePage() {
           <div className="felt-actions" aria-label="Your action">
             {match?.status === "finished" ? (
               <div className="felt-action-buttons">
+                <p className="felt-result" aria-live="polite">
+                  {!match.ranked
+                    ? "Practice game: unranked"
+                    : myElo
+                      ? `Elo ${myElo.before} → ${myElo.after} (${myElo.after >= myElo.before ? "+" : ""}${myElo.after - myElo.before}), settled on Solana`
+                      : match.chainMatchId
+                        ? "Settling your Elo on Solana…"
+                        : "Unrated: Solana was unavailable for this match"}
+                </p>
                 <Link href="/play" className="club-button">
                   Back to dashboard
                 </Link>

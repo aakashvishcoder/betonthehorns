@@ -21,11 +21,17 @@ import {
   joinQueue,
   leaveQueue,
   playAction,
+  startPractice,
   refreshSeatName,
   queueSnapshot,
   walletMatch,
 } from "./matchmaking.js";
 import { privateView, publicMatch } from "./engine.js";
+import { issueChallenge, login, logout, requireWallet, sessionWallet } from "./session.js";
+import { solanaReady } from "./chain.js";
+import { coachHandler } from "./src/coach.ts";
+import { NewsFeed, newsHandler } from "./src/news.ts";
+import { CoachSearch } from "./src/serpapi.ts";
 import { MODES, type ActionType, type GameMode } from "./types.js";
 
 const port = Number(process.env.PORT || 4000);
@@ -40,13 +46,6 @@ function isWalletId(value: unknown): value is string {
     typeof value === "string" &&
     /^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(value)
   );
-}
-
-function readWallet(req: express.Request) {
-  const fromBody = (req.body as { walletId?: string } | undefined)?.walletId;
-  const fromQuery = typeof req.query.walletId === "string" ? req.query.walletId : undefined;
-  const fromHeader = req.header("x-wallet-id");
-  return fromBody || fromQuery || fromHeader;
 }
 
 const app = express();
@@ -66,6 +65,22 @@ app.use(
     credentials: true,
   }),
 );
+// AI coach (Muse) and news (SerpApi). Mounted before express.json(): these read the raw body.
+const serpKey = process.env.SERPAPI_KEY;
+const coach = coachHandler({
+  apiKey: process.env.MODEL_API_KEY,
+  walletOf: (req) => sessionWallet(req as express.Request),
+  inRankedGame: (wallet) => {
+    const match = walletMatch(wallet);
+    return match?.status === "playing" && match.ranked;
+  },
+  search: serpKey ? new CoachSearch(serpKey) : undefined,
+  log: (msg) => console.log(`[coach] ${msg}`),
+});
+const news = newsHandler(new NewsFeed(serpKey, { log: (msg) => console.log(`[news] ${msg}`) }));
+app.post("/api/coach", (req, res) => void coach(req, res));
+app.get("/api/news", (req, res) => void news(req, res));
+
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
@@ -75,6 +90,35 @@ app.get("/api/health", (_req, res) => {
     elo: "settled-after-match",
     db: dbReady,
   });
+});
+
+// Signed wallet login: sign a one-time message (free, no transaction) for a 12-hour session.
+app.get("/api/auth/challenge/:walletId", (req, res) => {
+  if (!isWalletId(req.params.walletId)) {
+    res.status(400).json({ error: "Invalid wallet" });
+    return;
+  }
+  res.json(issueChallenge(req.params.walletId));
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const { walletId, signature } = req.body as { walletId?: string; signature?: string };
+  if (!isWalletId(walletId) || typeof signature !== "string") {
+    res.status(400).json({ error: "walletId and signature required" });
+    return;
+  }
+  const session = login(walletId, signature);
+  if (!session) {
+    res.status(401).json({ error: "Signature check failed. Please sign in again." });
+    return;
+  }
+  res.json({ walletId, ...session });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const header = req.header("authorization") ?? "";
+  if (header.startsWith("Bearer ")) logout(header.slice(7));
+  res.json({ ok: true });
 });
 
 app.get("/api/wallet/:walletId", async (req, res) => {
@@ -100,10 +144,11 @@ app.get("/api/wallet/:walletId", async (req, res) => {
 
 app.post("/api/profile/name", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const displayName = (req.body as { displayName?: string }).displayName;
-    if (!isWalletId(walletId) || typeof displayName !== "string") {
-      res.status(400).json({ error: "walletId and displayName required" });
+    if (typeof displayName !== "string") {
+      res.status(400).json({ error: "displayName required" });
       return;
     }
     if (!dbReady) {
@@ -210,11 +255,8 @@ app.post("/api/profile/showcase", async (req, res) => {
 
 app.post("/api/ably/token", async (req, res) => {
   try {
-    const walletId = readWallet(req);
-    if (!isWalletId(walletId)) {
-      res.status(400).json({ error: "walletId required" });
-      return;
-    }
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     res.json(await tokenRequest(walletId));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -231,10 +273,11 @@ app.get("/api/queue/:mode", (req, res) => {
 
 app.post("/api/queue", async (req, res) => {
   try {
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const { mode } = req.body as { mode?: string };
-    const walletId = readWallet(req);
-    if (!isWalletId(walletId) || !isMode(mode)) {
-      res.status(400).json({ error: "walletId and mode required" });
+    if (!isMode(mode)) {
+      res.status(400).json({ error: "mode required" });
       return;
     }
     res.json(await joinQueue(walletId, mode));
@@ -245,11 +288,8 @@ app.post("/api/queue", async (req, res) => {
 
 app.delete("/api/queue", async (req, res) => {
   try {
-    const walletId = readWallet(req);
-    if (!isWalletId(walletId)) {
-      res.status(400).json({ error: "walletId required" });
-      return;
-    }
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     await leaveQueue(walletId);
     res.json({ ok: true });
   } catch (error) {
@@ -257,9 +297,28 @@ app.delete("/api/queue", async (req, res) => {
   }
 });
 
+// Practice vs AI (unranked): the AI personas fill the other seats.
+app.post("/api/practice", async (req, res) => {
+  try {
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
+    const { mode } = req.body as { mode?: string };
+    if (!isMode(mode)) {
+      res.status(400).json({ error: "mode required" });
+      return;
+    }
+    res.json(await startPractice(walletId, mode));
+  } catch (error) {
+    res.status((error as { status?: number }).status ?? 500).json({ error: (error as Error).message });
+  }
+});
+
 app.get("/api/match/active/:walletId", (req, res) => {
-  if (!isWalletId(req.params.walletId)) {
-    res.status(400).json({ error: "Invalid wallet" });
+  // Includes the player's hole cards, so only their own session may ask.
+  const walletId = requireWallet(req, res);
+  if (!walletId) return;
+  if (req.params.walletId !== walletId) {
+    res.status(403).json({ error: "That isn't your wallet." });
     return;
   }
   const match = walletMatch(req.params.walletId);
@@ -280,20 +339,22 @@ app.get("/api/match/:id", (req, res) => {
     res.status(404).json({ error: "Match not found" });
     return;
   }
-  const walletId = readWallet(req);
+  // Hole cards only for the signed-in player; anyone else gets the public view.
+  const walletId = sessionWallet(req) ?? undefined;
   res.json({
-    match: publicMatch(match, isWalletId(walletId) ? walletId : undefined),
-    you: isWalletId(walletId) ? privateView(match, walletId) : null,
+    match: publicMatch(match, walletId),
+    you: walletId ? privateView(match, walletId) : null,
     chat: getChat(match.id),
   });
 });
 
 app.post("/api/match/:id/action", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const { type, raiseTo } = req.body as { type?: ActionType; raiseTo?: number };
-    if (!isWalletId(walletId) || !type) {
-      res.status(400).json({ error: "walletId and type required" });
+    if (!type) {
+      res.status(400).json({ error: "type required" });
       return;
     }
     res.json(await playAction(req.params.id, walletId, { type, raiseTo }));
@@ -304,10 +365,11 @@ app.post("/api/match/:id/action", async (req, res) => {
 
 app.post("/api/match/:id/chat", async (req, res) => {
   try {
-    const walletId = readWallet(req);
+    const walletId = requireWallet(req, res);
+    if (!walletId) return;
     const text = (req.body as { text?: string }).text;
-    if (!isWalletId(walletId) || typeof text !== "string") {
-      res.status(400).json({ error: "walletId and text required" });
+    if (typeof text !== "string") {
+      res.status(400).json({ error: "text required" });
       return;
     }
     res.json({ messages: await addChat(req.params.id, walletId, text) });

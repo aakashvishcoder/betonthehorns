@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { seatLabel } from "./names.js";
 import { cardCode, compareHands, evaluate, makeDeck } from "./poker.js";
 import { newCommit, seededShuffle } from "./rng.js";
@@ -96,7 +96,7 @@ export function startHand(match: MatchState) {
 
   const deck = freshDeck(match);
   for (const player of alive) {
-    player.hole = [deck.pop()!, deck.pop()!];
+    player.hole = [match.deck.pop()!, match.deck.pop()!];
   }
 
   match.street = "preflop";
@@ -138,6 +138,7 @@ export function createMatch(
   mode: GameMode,
   walletIds: string[],
   botIds: string[] = [],
+  options: { seed?: string; ranked?: boolean; chainMatchId?: string | null } = {},
 ): MatchState {
   const seats = MODE_SEATS[mode];
   const all = [...walletIds, ...botIds];
@@ -452,14 +453,23 @@ function showdown(match: MatchState) {
 
 export function continueAfterShowdown(match: MatchState) {
   if (match.status !== "playing" || match.street !== "showdown") return;
-  for (const player of match.players) {
-    if (!player.busted && player.stack <= 0) {
-      player.busted = true;
-      player.folded = true;
-      player.lastAction = "Out";
-    }
+  const bustedNow = match.players.filter((p) => !p.busted && p.stack <= 0);
+  for (const player of bustedNow) {
+    player.busted = true;
+    player.folded = true;
+    player.lastAction = "Out";
   }
-  if (living(match).length < 2) {
+  // Same-hand busts: the bigger starting stack places higher; equal stacks tie.
+  const survivors = living(match).length;
+  bustedNow.sort((a, b) => (match.handStartStacks[b.walletId] ?? 0) - (match.handStartStacks[a.walletId] ?? 0));
+  bustedNow.forEach((player, k) => {
+    const prev = bustedNow[k - 1];
+    const tied = prev && match.handStartStacks[prev.walletId] === match.handStartStacks[player.walletId];
+    match.places[player.walletId] = tied ? match.places[prev.walletId]! : survivors + k + 1;
+  });
+  // Practice vs AI ends once every human has busted; the AIs don't play on alone.
+  const humans = match.players.filter((p) => !p.bot);
+  if (living(match).length < 2 || (match.players.some((p) => p.bot) && humans.every((p) => p.busted))) {
     finishMatch(match);
     return;
   }
@@ -480,7 +490,12 @@ function finishMatch(match: MatchState) {
   match.street = "complete";
   match.actionIndex = null;
   match.actionDeadline = null;
-  const champ = [...living(match)].sort((a, b) => b.stack - a.stack)[0];
+  const standing = [...living(match)].sort((a, b) => b.stack - a.stack);
+  standing.forEach((player, k) => {
+    const prev = standing[k - 1];
+    match.places[player.walletId] = prev && prev.stack === player.stack ? match.places[prev.walletId]! : k + 1;
+  });
+  const champ = standing[0];
   if (champ) {
     match.winners = [{ walletId: champ.walletId, amount: champ.stack }];
     log(match, `${short(champ.walletId)} wins the table`);

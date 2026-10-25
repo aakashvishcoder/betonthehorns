@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Brand, Chip, TablePreview } from "@/components/poker/PokerVisuals";
+import NewsTicker from "@/components/poker/NewsTicker";
 import { useAuth } from "@/lib/auth";
 import SmoothScroll from "@/components/poker/SmoothScroll";
 import {
@@ -219,6 +220,7 @@ export default function Home() {
               ))}
             </div>
           </div>
+          <NewsTicker />
           <section
             id="the-table"
             className="experience-section page-width"

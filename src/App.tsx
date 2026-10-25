@@ -10,6 +10,7 @@ import RequireAuth from "@/components/auth/RequireAuth";
 import { AuthProvider } from "@/lib/auth";
 import { isGameModeId } from "@/lib/game-modes";
 import Home from "./pages/Home";
+import CoachWidget from "@/components/coach/CoachWidget";
 
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const PlayPage = lazy(() => import("./pages/PlayPage"));
@@ -77,6 +78,7 @@ export default function App() {
                   <Route component={NotFound} />
                 </Switch>
               </Suspense>
+              <CoachWidget />
             </PokerMotionProvider>
           </AuthProvider>
         </TooltipProvider>

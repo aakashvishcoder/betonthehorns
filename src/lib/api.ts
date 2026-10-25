@@ -1,4 +1,5 @@
 import type { GameModeId } from "@/lib/game-modes";
+import { SESSION_EXPIRED, sessionHeader } from "@/lib/session";
 
 const base = import.meta.env.VITE_API_URL ?? "";
 
@@ -37,6 +38,17 @@ export type PublicMatch = {
   revealSeed: string | null;
   chain: ChainTx[];
   players: PublicPlayer[];
+  /** Ranked matches settle Elo on Solana; practice (vs AI) matches don't. */
+  ranked: boolean;
+  /** Finishing place per wallet (1 = winner), filled in as players bust. */
+  places: Record<string, number>;
+  /** sha256 of the shuffle seed, committed on Solana before the first deal. */
+  commitment: string;
+  /** The seed itself, revealed when the match ends. */
+  seed: string | null;
+  chainMatchId: string | null;
+  /** Elo before/after once a ranked result is settled on-chain. */
+  elo: { walletId: string; before: number; after: number }[] | null;
 };
 
 export type ChainTx = {
@@ -124,10 +136,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...sessionHeader(),
       ...(init?.headers ?? {}),
     },
   });
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (response.status === 401 && !path.startsWith("/api/auth/")) {
+    window.dispatchEvent(new Event(SESSION_EXPIRED));
+  }
   if (!response.ok) {
     throw new Error(data.error || response.statusText);
   }
@@ -136,6 +152,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ ok: boolean; db: boolean }>("/api/health"),
+  authChallenge: (walletId: string) =>
+    request<{ nonce: string; message: string }>(`/api/auth/challenge/${walletId}`),
+  login: (walletId: string, signature: string) =>
+    request<{ walletId: string; token: string; expires: number }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ walletId, signature }),
+    }),
+  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   wallet: (walletId: string) =>
     request<{
       walletId: string;
@@ -161,6 +185,11 @@ export const api = {
       body: JSON.stringify({ walletId }),
     }),
   queue: (mode: GameModeId) => request<QueueSnapshot>(`/api/queue/${mode}`),
+  practice: (mode: GameModeId) =>
+    request<{ matchId: string }>("/api/practice", {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
   joinQueue: (walletId: string, mode: GameModeId) =>
     request<{
       status: "queued" | "playing";

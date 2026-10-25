@@ -12,10 +12,19 @@ import type { Wallet, WalletAccount } from "@wallet-standard/base";
 import WalletPicker, {
   type WalletChoice,
 } from "@/components/auth/WalletPicker";
+import { api } from "@/lib/api";
+import {
+  SESSION_EXPIRED,
+  clearSession as clearServerSession,
+  loadSession,
+  resumeSession,
+  saveSession,
+} from "@/lib/session";
 import {
   connectSolanaWallet,
   disconnectSolanaWallet,
   listSolanaWallets,
+  signTextMessage,
   subscribeSolanaWallets,
   waitForSolanaWallets,
   watchSolanaAccounts,
@@ -25,11 +34,13 @@ import { walletToast } from "@/lib/wallet-toast";
 export type AuthStatus =
   | "restoring"
   | "connecting"
+  /** Wallet connected; waiting for it to sign the one-time login message. */
+  | "signing"
   | "connected"
   | "disconnected";
 
 export type AuthState = {
-  /** True when a Solana account is connected. */
+  /** True when a Solana account is connected and has signed in to the server. */
   isAuthenticated: boolean;
   status: AuthStatus;
   /** Base58 public key of the connected account. */
@@ -71,6 +82,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addressRef = useRef<string | null>(null);
   const activeWalletRef = useRef<Wallet | null>(null);
+  const accountRef = useRef<WalletAccount | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  const signingFor = useRef<string | null>(null);
   const unwatchRef = useRef<(() => void) | null>(null);
   const explicitRef = useRef(false);
   const connectLock = useRef<Promise<string | null> | null>(null);
@@ -80,6 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     unwatchRef.current?.();
     unwatchRef.current = null;
     activeWalletRef.current = null;
+    accountRef.current = null;
+    if (addressRef.current) clearServerSession(addressRef.current);
+    setSignedIn(false);
     addressRef.current = null;
     setAddress(null);
     setWalletName(null);
@@ -89,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const adopt = useCallback((wallet: Wallet, account: WalletAccount) => {
     unwatchRef.current?.();
     activeWalletRef.current = wallet;
+    accountRef.current = account;
     addressRef.current = account.address;
     setAddress(account.address);
     setWalletName(wallet.name);
@@ -105,9 +123,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus("disconnected");
         return;
       }
+      accountRef.current = next;
       addressRef.current = next.address;
+      setSignedIn(false);
       setAddress(next.address);
     });
+  }, []);
+
+  /**
+   * Signs in to the game server: reuse a saved session for this wallet, or have the wallet
+   * sign a one-time login message (free; no transaction) and trade it for a 12-hour session.
+   */
+  const signIn = useCallback(async (forAddress: string) => {
+    const saved = loadSession(forAddress);
+    if (saved) {
+      resumeSession(forAddress, saved);
+      setSignedIn(true);
+      return;
+    }
+    const wallet = activeWalletRef.current;
+    const account = accountRef.current;
+    if (!wallet || !account || signingFor.current === forAddress) return;
+    signingFor.current = forAddress;
+    setStatus("signing");
+    try {
+      const { message } = await api.authChallenge(forAddress);
+      const signature = await signTextMessage(wallet, account, message);
+      const session = await api.login(forAddress, signature);
+      if (addressRef.current !== forAddress) return;
+      saveSession(forAddress, session.token, session.expires);
+      setSignedIn(true);
+      setStatus("connected");
+    } catch (error) {
+      if (addressRef.current !== forAddress) return;
+      // Without a signature the server can't tell it's really you, so treat it as signed out.
+      walletToast.error(
+        wasRejected(error)
+          ? "Sign the login message to play. It's free and doesn't move any funds."
+          : `Couldn't sign in: ${errorText(error) || "server unavailable"}`,
+      );
+      explicitRef.current = true;
+      unwatchRef.current?.();
+      unwatchRef.current = null;
+      activeWalletRef.current = null;
+      accountRef.current = null;
+      addressRef.current = null;
+      setAddress(null);
+      setWalletName(null);
+      setSignedIn(false);
+      setStatus("disconnected");
+    } finally {
+      signingFor.current = null;
+    }
+  }, []);
+
+  // Sign in whenever a wallet connects (or switches accounts).
+  useEffect(() => {
+    if (status === "connected" && address && !signedIn) void signIn(address);
+  }, [address, signIn, signedIn, status]);
+
+  // The server dropped our session (expired, or restarted): forget it and sign again.
+  useEffect(() => {
+    const onExpired = () => {
+      const current = addressRef.current;
+      if (!current) return;
+      clearServerSession(current);
+      setSignedIn(false);
+    };
+    window.addEventListener(SESSION_EXPIRED, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED, onExpired);
   }, []);
 
   useEffect(() => {
@@ -245,6 +329,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(async () => {
     const wallet = activeWalletRef.current;
     explicitRef.current = true;
+    void api.logout().catch(() => {});
     clearSession();
     if (!wallet) return;
     try {
@@ -264,7 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(
     () => ({
-      isAuthenticated: status === "connected" && Boolean(address),
+      isAuthenticated: status === "connected" && Boolean(address) && signedIn,
       status,
       address,
       displayAddress: displayAddress(address),
@@ -272,7 +357,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       connect,
       disconnect,
     }),
-    [address, connect, disconnect, status, walletName],
+    [address, connect, disconnect, signedIn, status, walletName],
   );
 
   return (

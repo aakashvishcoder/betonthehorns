@@ -21,6 +21,12 @@ type EventsFeature = {
   on: (event: "change", listener: ChangeListener) => () => void;
 };
 
+type SignMessageFeature = {
+  signMessage: (
+    ...inputs: { account: WalletAccount; message: Uint8Array }[]
+  ) => Promise<readonly { signedMessage: Uint8Array; signature: Uint8Array }[]>;
+};
+
 type LegacyProvider = {
   isPhantom?: boolean;
   isSolflare?: boolean;
@@ -31,6 +37,7 @@ type LegacyProvider = {
     publicKey?: { toBase58?: () => string; toString: () => string } | null;
   }>;
   disconnect?: () => Promise<void>;
+  signMessage?: (message: Uint8Array, display?: string) => Promise<{ signature: Uint8Array } | Uint8Array>;
   on?: (event: string, handler: (publicKey: unknown) => void) => void;
   removeListener?: (event: string, handler: (publicKey: unknown) => void) => void;
 };
@@ -159,8 +166,32 @@ function createLegacyWallet(provider: LegacyProvider, name: string): Wallet {
           return () => listeners.delete(listener);
         },
       },
+      ...(provider.signMessage
+        ? {
+            "solana:signMessage": {
+              version: "1.0.0",
+              signMessage: async (...inputs: { account: WalletAccount; message: Uint8Array }[]) =>
+                Promise.all(
+                  inputs.map(async ({ message }) => {
+                    const result = await provider.signMessage!(message, "utf8");
+                    const signature = result instanceof Uint8Array ? result : result.signature;
+                    return { signedMessage: message, signature };
+                  }),
+                ),
+            } satisfies SignMessageFeature & { version: string },
+          }
+        : {}),
     },
   };
+}
+
+/** Asks the wallet to sign a plain-text message (free; no transaction). Returns base64. */
+export async function signTextMessage(wallet: Wallet, account: WalletAccount, text: string) {
+  const sign = feature<SignMessageFeature>(wallet, "solana:signMessage");
+  if (!sign) throw new Error(`${wallet.name} can't sign messages.`);
+  const [result] = await sign.signMessage({ account, message: new TextEncoder().encode(text) });
+  if (!result) throw new Error("The wallet returned no signature.");
+  return btoa(String.fromCharCode(...result.signature));
 }
 
 /** Wallet Standard wallets, plus older injected providers that never registered. */

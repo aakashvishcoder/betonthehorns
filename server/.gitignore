@@ -1,0 +1,5 @@
+node_modules
+# Secrets: the Muse API key lives here and must never be committed.
+.env
+# SerpApi results cache and daily search counts
+.cache

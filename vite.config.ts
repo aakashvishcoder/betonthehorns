@@ -9,8 +9,7 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   server: {
-    proxy: {
-      "/api": "http://127.0.0.1:4000",
-    },
+    // Everything, including the AI coach and news, is served by the API (server/index.ts).
+    proxy: { "/api": "http://127.0.0.1:4000" },
   },
 });
