@@ -1,5 +1,7 @@
 -- Bet on the Horns: one-time Snowflake setup for AI practice opponents.
--- Paste into a Snowsight worksheet and run all, as a user with ACCOUNTADMIN.
+-- Paste into a Snowsight worksheet as a user with ACCOUNTADMIN. Run the statements
+-- one at a time (cursor on a statement, Cmd+Enter): some worksheets run only the
+-- statement under the cursor. Steps 1-4 are safe to re-run; run step 5 once.
 -- It creates a tiny warehouse with a credit cap, one table + view, and a
 -- limited role/user for the game server. The server never gets admin rights.
 
@@ -60,6 +62,8 @@ GRANT ROLE HORNS_APP TO USER HORNS_SERVICE;
 -- (simplest for a hackathon). For production, add a network policy for your server's IPs.
 CREATE AUTHENTICATION POLICY IF NOT EXISTS HORNS.POKER.HORNS_PAT_POLICY
   PAT_POLICY = (NETWORK_POLICY_EVALUATION = ENFORCED_NOT_REQUIRED);
+-- A user can hold only one policy; unset first so this script is safe to re-run.
+ALTER USER HORNS_SERVICE UNSET AUTHENTICATION POLICY;
 ALTER USER HORNS_SERVICE SET AUTHENTICATION POLICY HORNS.POKER.HORNS_PAT_POLICY;
 
 -- 4. Optional: many trial regions don't host every model. This lets Cortex route to
