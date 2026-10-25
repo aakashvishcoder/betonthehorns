@@ -42,7 +42,6 @@ export default function CoachWidget() {
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [remaining, setRemaining] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,10 +86,8 @@ export default function CoachWidget() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         reply?: string;
-        remaining?: number;
         error?: string;
       };
-      if (typeof data.remaining === "number") setRemaining(data.remaining);
       if (res.ok && data.reply)
         setMessages([...next, { role: "assistant", content: data.reply }]);
       else
@@ -229,9 +226,6 @@ export default function CoachWidget() {
           </form>
           <footer className="coach-footer">
             <span>ALL IN</span>
-            {remaining !== null && (
-              <small>{remaining} questions left today</small>
-            )}
           </footer>
         </section>
       )}

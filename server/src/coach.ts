@@ -8,10 +8,11 @@ export const COACH = {
   baseUrl: process.env.MUSE_BASE_URL ?? "https://api.meta.ai/v1",
   model: process.env.MUSE_MODEL ?? "muse-spark-1.3",
   /** Muse Spark is a reasoning model: this caps thinking + answer together. */
-  maxReplyTokens: 800,
+  maxReplyTokens: 1_500,
   /** Low thinking keeps answers quick and cheap; at the default it used up the whole budget thinking. */
   reasoningEffort: "low",
-  dailyCap: 30,
+  /** Questions per browser per day; null = no limit (testing). Set e.g. 30 before launch. */
+  dailyCap: null as number | null,
   /** Messages of history sent per request (user + coach turns). */
   historyMessages: 6,
   maxMessageChars: 1_000,
@@ -47,7 +48,7 @@ export class DailyCap {
   private day = "";
   private readonly limit: number;
 
-  constructor(limit = COACH.dailyCap) {
+  constructor(limit = 30) {
     this.limit = limit;
   }
 
@@ -87,6 +88,14 @@ export function cleanHistory(raw: unknown): ChatMessage[] | null {
   return messages as ChatMessage[];
 }
 
+/** If a reply hit the token cap mid-sentence, cut it back to the last complete sentence or list item. */
+export function trimToSentence(text: string): string {
+  const cut = Math.max(text.lastIndexOf(". "), text.lastIndexOf(".\n"), text.lastIndexOf("!"), text.lastIndexOf("?"), text.lastIndexOf("\n- "));
+  if (text.endsWith(".")) return text;
+  if (cut < text.length * 0.4) return `${text.trimEnd()}…`; // too little left to cut back to; mark it as cut
+  return text.slice(0, cut + 1).trimEnd();
+}
+
 export async function askCoach(history: ChatMessage[], apiKey: string, fetchImpl: typeof fetch = fetch) {
   const res = await fetchImpl(`${COACH.baseUrl}/chat/completions`, {
     method: "POST",
@@ -104,22 +113,25 @@ export async function askCoach(history: ChatMessage[], apiKey: string, fetchImpl
     choices?: { message?: { content?: string | null }; finish_reason?: string }[];
     usage?: { prompt_tokens: number; completion_tokens: number };
   };
-  const reply = data.choices?.[0]?.message?.content?.trim();
-  if (!reply) throw new Error(`Muse API returned no reply (finish_reason ${data.choices?.[0]?.finish_reason ?? "?"})`);
+  const choice = data.choices?.[0];
+  const text = choice?.message?.content?.trim();
+  if (!text) throw new Error(`Muse API returned no reply (finish_reason ${choice?.finish_reason ?? "?"})`);
+  const reply = choice?.finish_reason === "length" ? trimToSentence(text) : text;
   return { reply, usage: data.usage };
 }
 
 export type CoachHandlerOptions = {
   apiKey?: string;
-  cap?: DailyCap;
+  /** Per-browser daily limit; null turns it off. */
+  cap?: DailyCap | null;
   /** True if this wallet is seated at a ranked table (coach is off there). */
   inRankedGame?: (wallet: string) => boolean;
   fetchImpl?: typeof fetch;
   log?: (msg: string) => void;
 };
 
-/** POST /api/coach  { browserId, messages, wallet? }  ->  { reply, remaining } */
-export function coachHandler({ apiKey, cap = new DailyCap(), inRankedGame = () => false, fetchImpl, log = () => {} }: CoachHandlerOptions) {
+/** POST /api/coach  { browserId, messages, wallet? }  ->  { reply, remaining? } */
+export function coachHandler({ apiKey, cap = COACH.dailyCap === null ? null : new DailyCap(COACH.dailyCap), inRankedGame = () => false, fetchImpl, log = () => {} }: CoachHandlerOptions) {
   const json = (res: ServerResponse, status: number, body: object) =>
     res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 
@@ -145,14 +157,14 @@ export function coachHandler({ apiKey, cap = new DailyCap(), inRankedGame = () =
     if (typeof body.wallet === "string" && inRankedGame(body.wallet)) {
       return json(res, 403, { error: "The coach is off during ranked games. Good luck!" });
     }
-    if (!cap.take(browserId)) return json(res, 429, { error: "You've used today's coach questions. Come back tomorrow!", remaining: 0 });
+    if (cap && !cap.take(browserId)) return json(res, 429, { error: "You've used today's coach questions. Come back tomorrow!", remaining: 0 });
 
     try {
       const { reply, usage } = await askCoach(history, apiKey, fetchImpl);
       log(`coach: ${usage?.prompt_tokens ?? "?"} in / ${usage?.completion_tokens ?? "?"} out tokens`);
-      return json(res, 200, { reply, remaining: cap.remaining(browserId) });
+      return json(res, 200, { reply, ...(cap ? { remaining: cap.remaining(browserId) } : {}) });
     } catch (e) {
-      cap.refund(browserId); // failures don't use up a question
+      cap?.refund(browserId); // failures don't use up a question
       log(`coach error: ${(e as Error).message}`);
       return json(res, 502, { error: "The coach couldn't answer just now. Please try again." });
     }

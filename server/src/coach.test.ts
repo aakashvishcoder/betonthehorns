@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { type Server, createServer } from "node:http";
-import { COACH, DailyCap, cleanHistory, coachHandler } from "./coach.ts";
+import { COACH, DailyCap, cleanHistory, coachHandler, trimToSentence } from "./coach.ts";
 
 // A fake Muse API: records requests, answers like Chat Completions. No real (paid) calls.
 const requests: { url: string; headers: Record<string, string>; body: any }[] = [];
@@ -68,6 +68,31 @@ test("rejects bad input and players in ranked games", async () => {
   assert.equal(blocked.status, 403);
   ranked = false;
   assert.equal(requests.length, calls, "no paid calls for rejected requests");
+});
+
+test("cut-off replies end on a whole sentence", () => {
+  assert.equal(trimToSentence("Fold weak aces. Raise strong ones. In late posit"), "Fold weak aces. Raise strong ones.");
+  assert.equal(trimToSentence("Tips:\n- Fold weak aces.\n- Raise strong ones\n- In late"), "Tips:\n- Fold weak aces.\n- Raise strong ones");
+  assert.equal(trimToSentence("Already complete."), "Already complete.");
+  assert.equal(trimToSentence("Short and cut"), "Short and cut…");
+});
+
+test("no daily limit when the cap is off", async () => {
+  const handler = coachHandler({ apiKey: "k", cap: null, fetchImpl: fakeFetch });
+  const s = createServer((req, res) => void handler(req, res)).listen(port + 2);
+  try {
+    for (let i = 0; i < 5; i++) {
+      const r = await fetch(`http://localhost:${port + 2}/api/coach`, {
+        method: "POST",
+        body: JSON.stringify({ browserId: "unlimited-one", messages: [{ role: "user", content: "q" }] }),
+      });
+      const body = await r.json();
+      assert.equal(r.status, 200);
+      assert.equal(body.remaining, undefined);
+    }
+  } finally {
+    s.close();
+  }
 });
 
 test("refuses cleanly when no API key is configured", async () => {
